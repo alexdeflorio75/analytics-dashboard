@@ -9,6 +9,7 @@ import datetime
 import streamlit.components.v1 as components
 import altair as alt 
 import json
+import re
 
 # --- 1. CONFIGURAZIONE PAGINA ---
 st.set_page_config(page_title="ADF Marketing Analyst", layout="wide", page_icon="📊")
@@ -16,57 +17,73 @@ st.set_page_config(page_title="ADF Marketing Analyst", layout="wide", page_icon=
 if 'report_data' not in st.session_state:
     st.session_state.report_data = None
 
-# --- 2. DESIGN SYSTEM (CSS, FONT & PALETTE) ---
+# --- 2. DESIGN SYSTEM (PALETTE & FONT FIX) ---
 st.markdown("""
 <style>
-    /* Importazione Font Google */
+    /* Importazione Font */
     @import url('https://fonts.googleapis.com/css2?family=Lato:wght@400;700&family=Poppins:wght@600;700&display=swap');
 
-    /* Applicazione Font */
-    html, body, [class*="css"] {
-        font-family: 'Lato', sans-serif;
-        color: #2D3233; /* Grigio scuro palette */
+    /* APPLICAZIONE PALETTE GLOBALE */
+    /* Sfondo Generale */
+    .stApp {
+        background-color: #F7F7F7;
     }
     
+    /* Testi Generali (Lato - Grigio Scuro Palette) */
+    html, body, p, li, .stMarkdown {
+        font-family: 'Lato', sans-serif !important;
+        color: #2D3233 !important;
+    }
+    
+    /* Titoli (Poppins - Nero/Grigio Scuro) */
     h1, h2, h3 {
         font-family: 'Poppins', sans-serif !important;
-        color: #0D0D0D !important; /* Nero palette */
+        color: #0D0D0D !important;
     }
     
-    /* Titoli dei report (h3) in Blu Palette */
+    /* Titoli dei Report specifici (Blu Palette) */
     div.report-section h3 {
         color: #066C9C !important;
     }
 
+    /* KPI Numerici (Blu Palette) */
+    [data-testid="stMetricValue"] {
+        font-family: 'Poppins', sans-serif;
+        color: #066C9C !important;
+    }
+    [data-testid="stMetricLabel"] {
+        font-family: 'Lato', sans-serif;
+        color: #54A1BF !important; /* Variante chiara del blu */
+    }
+
     /* Pulsante Primario (Arancione Ruggine Palette) */
     div.stButton > button:first-child {
-        background-color: #D15627; 
-        color: white;
+        background-color: #D15627 !important; 
+        color: white !important;
         border-radius: 8px;
         font-weight: 600;
         border: none;
         padding: 0.6rem 1.2rem;
         font-family: 'Poppins', sans-serif;
-        letter-spacing: 0.5px;
     }
     div.stButton > button:first-child:hover {
-        background-color: #B3441F; /* Versione più scura per hover */
-        border: none;
-        color: white;
+        background-color: #B3441F !important;
+        color: white !important;
     }
 
-    /* Sidebar Background (Grigio chiarissimo) */
+    /* Sidebar (Bianco/Grigio chiaro) */
     [data-testid="stSidebar"] {
-        background-color: #F7F7F7;
+        background-color: #FFFFFF;
+        border-right: 1px solid #D0E9F2;
     }
 
-    /* KPI Cards Styling */
-    [data-testid="stMetricValue"] {
-        font-family: 'Poppins', sans-serif;
-        color: #066C9C;
+    /* Box Info AI (Sfondo Azzurro chiaro Palette) */
+    .stAlert {
+        background-color: #D0E9F220; /* 20% opacità */
+        border: 1px solid #066C9C;
     }
-    
-    /* Stile per la Stampa */
+
+    /* Stile Stampa */
     @media print {
         [data-testid="stSidebar"] {display: none !important;}
         .stButton {display: none !important;}
@@ -74,15 +91,12 @@ st.markdown("""
         footer {visibility: hidden !important;}
         .block-container {
             background-color: white !important;
-            color: black !important;
-            max-width: 100% !important;
             padding: 0px !important;
-            margin: 0px !important;
         }
         .report-section { 
             page-break-inside: avoid;
             padding-bottom: 20px;
-            border-bottom: 2px solid #D0E9F2; /* Linea separazione azzurra */
+            border-bottom: 2px solid #D0E9F2;
             margin-bottom: 20px;
         }
     }
@@ -106,8 +120,6 @@ def ask_gemini_advanced(df, report_name, kpi_curr, kpi_prev, comparison_active, 
         return "⚠️ Chiave API AI mancante."
     
     data_preview = df.head(10).to_string(index=False)
-    
-    # Costruzione del Prompt Contestuale
     context_str = f"L'azienda opera nel settore: '{business_context}'." if business_context else "Settore non specificato."
     
     if comparison_active:
@@ -117,30 +129,26 @@ def ask_gemini_advanced(df, report_name, kpi_curr, kpi_prev, comparison_active, 
             diff = v - prev
             perc = ((diff/prev)*100) if prev > 0 else 0
             kpi_text += f"- {k}: {v} (Var: {perc:.1f}%)\n"
-        task_prompt = "1. Analizza la CRESCITA o il CALO (considerando eventuale stagionalità del settore).\n2. Identifica la causa probabile."
+        task_prompt = "1. Analizza la CRESCITA o il CALO (considerando stagionalità).\n2. Identifica cause probabili."
     else:
         kpi_text = ""
         for k, v in kpi_curr.items():
             kpi_text += f"- {k}: {v}\n"
-        task_prompt = "1. Analizza la DISTRIBUZIONE attuale.\n2. Identifica i canali/prodotti migliori per questo settore."
+        task_prompt = "1. Analizza la DISTRIBUZIONE attuale.\n2. Identifica i canali/prodotti migliori."
 
     prompt = f"""
-    Sei un Senior Marketing Analyst italiano per ADF Marketing.
+    Sei un Senior Marketing Analyst italiano.
     CONTESTO CLIENTE: {context_str}
     Report: '{report_name}'.
-    
     KPI:
     {kpi_text}
-    
-    DATI (Top 10):
+    DATI:
     {data_preview}
-    
     COMPITI:
     {task_prompt}
     3. Assegna un VOTO Performance (1-10).
-    4. Suggerisci 1 AZIONE PRATICA specifica per questo settore.
-    
-    OUTPUT: Markdown sintetico. No saluti. Usa grassetti per i punti chiave.
+    4. Suggerisci 1 AZIONE PRATICA.
+    OUTPUT: Markdown sintetico. No saluti.
     """
     
     try:
@@ -155,35 +163,21 @@ def ask_gemini_advanced(df, report_name, kpi_curr, kpi_prev, comparison_active, 
         except Exception as e:
             return f"⚠️ AI non disponibile: {e}"
 
-# --- 4. FUNZIONE AUTH AUTO-PULENTE ---
+# --- 4. AUTH BLINDATA ---
 def get_ga4_client():
     try:
         if "GOOGLE_CREDENTIALS" in st.secrets:
             creds_str = st.secrets["GOOGLE_CREDENTIALS"]
-            # PULIZIA AGGRESSIVA: Rimuove newlines spuri e spazi extra
-            # Sostituiamo i 'newline reali' con spazi, mantenendo i \n testuali se necessari
-            # Ma per un JSON valido, spesso basta rimuovere i controlli e parsare
-            
-            # Tentativo 1: Parsing diretto (se corretto)
             try:
                 creds_dict = json.loads(creds_str, strict=False)
             except json.JSONDecodeError:
-                # Tentativo 2: Pulizia caratteri di controllo invisibili
-                import re
-                # Rimuove tutti i caratteri di controllo non stampabili (tranne i newline 'buoni')
                 clean_str = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', creds_str) 
-                # A volte il problema è proprio la private key spezzata. 
-                # Un fix grezzo ma efficace per Streamlit secrets:
-                clean_str = creds_str.replace('\n', '\\n') # Escape dei newline se sono stati incollati "interpretati"
-                # Se questo rompe il JSON, torniamo al replace semplice
+                clean_str = clean_str.replace('\n', '\\n') 
                 if not clean_str.startswith('{'): 
                      clean_str = creds_str.replace('\n', ' ')
-                
-                # Ultima spiaggia: pulizia manuale basica per i secrets comuni
                 try:
                      creds_dict = json.loads(creds_str.replace('\n', ' '), strict=False)
-                except:
-                     return None
+                except: return None
 
             credentials = service_account.Credentials.from_service_account_info(creds_dict)
             return BetaAnalyticsDataClient(credentials=credentials)
@@ -191,8 +185,7 @@ def get_ga4_client():
         elif os.path.exists('credentials.json'):
             os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = 'credentials.json'
             return BetaAnalyticsDataClient()
-        else:
-            return None
+        else: return None
     except Exception as e:
         st.error(f"Errore Auth: {e}")
         return None
@@ -211,7 +204,6 @@ def get_ga4_data(prop_id, start, end, p_start, p_end, report_kind, comp_active):
     dims = []
     mets = []
     
-    # Configurazione Dimensioni
     if report_kind == "Acquisizione Traffico": dims = [Dimension(name="sessionSourceMedium")]
     elif report_kind == "Campagne": dims = [Dimension(name="campaignName")]
     elif report_kind == "Panoramica Eventi": dims = [Dimension(name="eventName")]
@@ -223,7 +215,6 @@ def get_ga4_data(prop_id, start, end, p_start, p_end, report_kind, comp_active):
     elif report_kind == "Dispositivi": dims = [Dimension(name="deviceCategory")]
     else: dims = [Dimension(name="date")]
 
-    # Configurazione Metriche
     if "Monetizzazione" in report_kind: mets = [Metric(name="itemsPurchased"), Metric(name="totalRevenue")]
     elif "Eventi" in report_kind: mets = [Metric(name="eventCount"), Metric(name="totalUsers")]
     elif "Campagne" in report_kind: mets = [Metric(name="sessions"), Metric(name="conversions")]
@@ -272,15 +263,16 @@ def render_chart_smart(df, report_kind):
     if not numeric: return
     main_met = numeric[0]
     
+    # Palette colori applicata ai grafici Altair
     if "Dispositivi" in report_kind or "Fidelizzazione" in report_kind:
         c = alt.Chart(df).mark_arc(innerRadius=50).encode(
             theta=alt.Theta(field=main_met, type="quantitative"),
-            color=alt.Color(field="Dimensione", type="nominal", scale=alt.Scale(scheme='blues')),
+            color=alt.Color(field="Dimensione", type="nominal", scale=alt.Scale(range=["#066C9C", "#D15627", "#D0E9F2", "#2D3233"])),
             tooltip=["Dimensione", main_met]
         )
         st.altair_chart(c, use_container_width=True)
     elif "Panoramica" in report_kind and "Eventi" not in report_kind: 
-         st.line_chart(df, x='Data', y=numeric, color=numeric)
+         st.line_chart(df, x='Data', y=numeric)
     else:
         df_s = df.sort_values(by=main_met, ascending=False).head(15)
         c = alt.Chart(df_s).mark_bar().encode(
@@ -291,7 +283,7 @@ def render_chart_smart(df, report_kind):
         ).properties(height=350)
         st.altair_chart(c, use_container_width=True)
 
-# --- 7. LOGICA GENERAZIONE ---
+# --- 7. LOGICA ---
 def generate_report(reports, pid, d1, d2, p1, p2, comp, context):
     res = {}
     bar = st.progress(0)
@@ -304,12 +296,11 @@ def generate_report(reports, pid, d1, d2, p1, p2, comp, context):
                      df['Data'] = df['date_obj'].dt.strftime('%d/%m/%y')
                      df = df.sort_values(by='date_obj')
             
-            # AI Context
             comm = ask_gemini_advanced(df, rep, kpi[0], kpi[1], comp, context)
             res[rep] = {"df": df, "curr": kpi[0], "prev": kpi[1], "comm": comm}
         
         elif status == "AUTH_ERROR":
-            st.error("Errore Autenticazione Cloud. Ricarica la pagina.")
+            st.error("Errore Autenticazione.")
             break
         bar.progress((i + 1) / len(reports))
     bar.empty()
@@ -317,12 +308,13 @@ def generate_report(reports, pid, d1, d2, p1, p2, comp, context):
 
 # --- SIDEBAR ---
 with st.sidebar:
-    if os.path.exists("logo.png"): st.image("logo.png", width=120)
+    # LOGO RIDOTTO A 80PX COME RICHIESTO
+    if os.path.exists("logo.png"): st.image("logo.png", width=80)
     
     st.markdown("### Configurazione Cliente")
     client_name = st.text_input("Nome Cliente / Sito Web", placeholder="Es. Key4Sales.it")
-    property_id = st.text_input("ID Proprietà (Numerico)", value=st.session_state.get('last_prop_id', ''))
-    business_context = st.text_area("Settore / Contesto", placeholder="Es. E-commerce scarpe donna, stagionalità estiva...", help="Aiuta l'IA a dare consigli specifici")
+    property_id = st.text_input("ID Proprietà", value=st.session_state.get('last_prop_id', ''))
+    business_context = st.text_area("Settore / Contesto", placeholder="Es. E-commerce...", help="Aiuta l'IA a dare consigli specifici")
     
     st.divider()
     
@@ -334,7 +326,6 @@ with st.sidebar:
     else: start_date = st.date_input("Dal", today - datetime.timedelta(days=30))
     end_date = st.date_input("Al", today) if date_opt == "Personalizzato" else today
     
-    # Checkbox senza icona verde
     comparison_active = st.checkbox("Confronta col periodo precedente", value=True)
     
     if comparison_active:
@@ -387,13 +378,15 @@ if st.session_state.report_data:
         
         cur, pre = content['curr'], content['prev']
         cols = st.columns(len(cur))
+        
+        # --- FIX BUG: Sostituito 'val' con 'v' ---
         for idx, (k, v) in enumerate(cur.items()):
             if comparison_active:
                 pv = pre.get(k, 0)
                 d = ((v - pv) / pv * 100) if pv > 0 else 0
-                cols[idx].metric(k, f"{val:,.0f}".replace(",", ".") if isinstance(v, float) else v, f"{d:.1f}%")
+                cols[idx].metric(k, f"{v:,.0f}".replace(",", ".") if isinstance(v, float) else v, f"{d:.1f}%")
             else:
-                cols[idx].metric(k, f"{val:,.0f}".replace(",", ".") if isinstance(v, float) else v)
+                cols[idx].metric(k, f"{v:,.0f}".replace(",", ".") if isinstance(v, float) else v)
         
         st.info(f"🤖 **Analisi ADF:**\n\n{content['comm']}")
         render_chart_smart(content['df'], name)
