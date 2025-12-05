@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 from google.analytics.data_v1beta import BetaAnalyticsDataClient
 from google.analytics.data_v1beta.types import RunReportRequest, DateRange, Metric, Dimension
-from google.oauth2 import service_account # NUOVO IMPORT IMPORTANTE
+from google.oauth2 import service_account
 import google.generativeai as genai
 import os
 import datetime
@@ -10,7 +10,7 @@ import streamlit.components.v1 as components
 import altair as alt 
 import json
 
-# --- 1. CONFIGURAZIONE PAGINA E STATO ---
+# --- 1. CONFIGURAZIONE PAGINA ---
 st.set_page_config(page_title="ADF Marketing Analyst GA4", layout="wide", page_icon="📊")
 
 if 'report_data' not in st.session_state:
@@ -18,7 +18,7 @@ if 'report_data' not in st.session_state:
 if 'report_type_generated' not in st.session_state:
     st.session_state.report_type_generated = None
 
-# --- 2. CSS PER STAMPA ---
+# --- 2. CSS STAMPA ---
 st.markdown("""
 <style>
     div.stButton > button:first-child {
@@ -76,7 +76,7 @@ def ask_gemini_advanced(df, report_name, kpi_curr, kpi_prev, comparison_active):
             diff = v - prev
             perc = ((diff/prev)*100) if prev > 0 else 0
             kpi_text += f"- {k}: {v} (Var: {perc:.1f}%)\n"
-        task_prompt = "1. Analizza la CRESCITA o il CALO rispetto al periodo precedente.\n2. Identifica la causa probabile."
+        task_prompt = "1. Analizza CRESCITA/CALO rispetto al periodo precedente.\n2. Identifica la causa probabile."
     else:
         kpi_text = ""
         for k, v in kpi_curr.items():
@@ -109,20 +109,20 @@ def ask_gemini_advanced(df, report_name, kpi_curr, kpi_prev, comparison_active):
         except Exception as e:
             return f"⚠️ AI non disponibile: {e}"
 
-# --- 4. MOTORE DATI GA4 (FIX CLOUD) ---
+# --- 4. FUNZIONE DI AUTENTICAZIONE SICURA (CLOUD) ---
 def get_ga4_client():
-    """Crea il client GA4 gestendo sia Cloud che Localhost"""
+    """Questa è la funzione magica che legge i Secrets dal Cloud"""
     try:
-        # TENTATIVO 1: CLOUD (Secrets)
+        # CASO 1: Siamo sul Cloud (Streamlit Share)
         if "GOOGLE_CREDENTIALS" in st.secrets:
-            # Legge la stringa JSON dai secrets e la converte in dizionario
             creds_json = st.secrets["GOOGLE_CREDENTIALS"]
+            # Convertiamo la stringa JSON dei secrets in un dizionario
             creds_dict = json.loads(creds_json)
-            # Crea le credenziali direttamente in memoria (senza file)
+            # Creiamo le credenziali in memoria
             credentials = service_account.Credentials.from_service_account_info(creds_dict)
             return BetaAnalyticsDataClient(credentials=credentials)
         
-        # TENTATIVO 2: LOCALHOST (File)
+        # CASO 2: Siamo in Locale (PC)
         elif os.path.exists('credentials.json'):
             os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = 'credentials.json'
             return BetaAnalyticsDataClient()
@@ -130,11 +130,12 @@ def get_ga4_client():
         else:
             return None
     except Exception as e:
-        st.error(f"Errore Creazione Client: {e}")
+        st.error(f"Errore critico Auth: {e}")
         return None
 
+# --- 5. MOTORE DATI ---
 def get_ga4_data(prop_id, start, end, p_start, p_end, report_kind, comp_active):
-    # Otteniamo il client in modo sicuro
+    # USIAMO LA FUNZIONE SICURA QUI SOTTO
     client = get_ga4_client()
     
     if not client:
@@ -146,7 +147,6 @@ def get_ga4_data(prop_id, start, end, p_start, p_end, report_kind, comp_active):
         "newUsers": "Nuovi Utenti", "engagedSessions": "Sessioni con Interazione"
     }
 
-    # Configurazione Dimensioni/Metriche
     dims = []
     mets = []
     
@@ -185,7 +185,6 @@ def get_ga4_data(prop_id, start, end, p_start, p_end, report_kind, comp_active):
         mets = [Metric(name="activeUsers"), Metric(name="sessions"), Metric(name="conversions")]
 
     try:
-        # Richiesta Corrente
         req_curr = RunReportRequest(property=f"properties/{prop_id}", date_ranges=[DateRange(start_date=start, end_date=end)], dimensions=dims, metrics=mets)
         res_curr = client.run_report(req_curr)
 
@@ -209,7 +208,6 @@ def get_ga4_data(prop_id, start, end, p_start, p_end, report_kind, comp_active):
             if comp_active:
                 req_prev = RunReportRequest(property=f"properties/{prop_id}", date_ranges=[DateRange(start_date=p_start, end_date=p_end)], dimensions=dims, metrics=mets)
                 res_prev = client.run_report(req_prev)
-                
                 for m in mets:
                     ita = metric_map.get(m.name, m.name)
                     totals_prev[ita] = 0
@@ -223,7 +221,7 @@ def get_ga4_data(prop_id, start, end, p_start, p_end, report_kind, comp_active):
     except Exception as e:
         return "API_ERROR", str(e), None
 
-# --- 5. RENDERER GRAFICI ---
+# --- 6. RENDERER GRAFICI ---
 def render_chart_smart(df, report_kind):
     numeric_cols = [c for c in df.columns if c not in ['Dimensione', 'Data', 'date_obj']]
     if not numeric_cols: return
@@ -247,7 +245,7 @@ def render_chart_smart(df, report_kind):
         ).properties(height=350)
         st.altair_chart(chart, use_container_width=True)
 
-# --- 6. LOGICA GENERAZIONE ---
+# --- 7. LOGICA GENERAZIONE ---
 def generate_report_logic(reports, prop_id, d_start, d_end, p_start, p_end, comp_active):
     results = {}
     progress_bar = st.progress(0)
@@ -266,8 +264,11 @@ def generate_report_logic(reports, prop_id, d_start, d_end, p_start, p_end, comp
             results[rep_name] = {"df": df, "kpi_curr": kpi[0], "kpi_prev": kpi[1], "comment": comment}
         
         elif status == "MISSING_CREDENTIALS":
-            st.error("ERRORE CREDENZIALI: Controlla di aver inserito i Secrets su Streamlit Cloud (o il file credentials.json in locale).")
+            st.error("ERRORE CREDENZIALI: Controlla Secrets su Streamlit Cloud.")
             break
+        elif status == "API_ERROR":
+             st.error(f"Errore API Google: {df}")
+             break
             
         progress_bar.progress((idx + 1) / len(reports))
     
