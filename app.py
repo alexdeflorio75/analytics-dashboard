@@ -15,8 +15,6 @@ st.set_page_config(page_title="ADF Marketing Analyst GA4", layout="wide", page_i
 
 if 'report_data' not in st.session_state:
     st.session_state.report_data = None
-if 'report_type_generated' not in st.session_state:
-    st.session_state.report_type_generated = None
 
 # --- 2. CSS STAMPA ---
 st.markdown("""
@@ -76,12 +74,12 @@ def ask_gemini_advanced(df, report_name, kpi_curr, kpi_prev, comparison_active):
             diff = v - prev
             perc = ((diff/prev)*100) if prev > 0 else 0
             kpi_text += f"- {k}: {v} (Var: {perc:.1f}%)\n"
-        task_prompt = "1. Analizza CRESCITA/CALO rispetto al periodo precedente.\n2. Identifica la causa probabile."
+        task_prompt = "1. Analizza CRESCITA/CALO.\n2. Identifica cause probabili."
     else:
         kpi_text = ""
         for k, v in kpi_curr.items():
             kpi_text += f"- {k}: {v}\n"
-        task_prompt = "1. Analizza la DISTRIBUZIONE attuale.\n2. Identifica i top performer."
+        task_prompt = "1. Analizza DISTRIBUZIONE.\n2. Identifica top performer."
 
     prompt = f"""
     Sei un Senior Marketing Analyst italiano per ADF Marketing.
@@ -92,8 +90,8 @@ def ask_gemini_advanced(df, report_name, kpi_curr, kpi_prev, comparison_active):
     {data_preview}
     COMPITI:
     {task_prompt}
-    3. Assegna un VOTO (1-10).
-    4. Suggerisci 1 AZIONE PRATICA.
+    3. VOTO (1-10).
+    4. 1 AZIONE PRATICA.
     OUTPUT: Markdown sintetico. No saluti.
     """
     
@@ -109,20 +107,27 @@ def ask_gemini_advanced(df, report_name, kpi_curr, kpi_prev, comparison_active):
         except Exception as e:
             return f"⚠️ AI non disponibile: {e}"
 
-# --- 4. FUNZIONE DI AUTENTICAZIONE SICURA (CLOUD) ---
+# --- 4. FUNZIONE DI AUTENTICAZIONE BLINDATA (FIX v9.0) ---
 def get_ga4_client():
-    """Questa è la funzione magica che legge i Secrets dal Cloud"""
     try:
-        # CASO 1: Siamo sul Cloud (Streamlit Share)
+        # CLOUD: Legge dai Secrets con pulizia automatica
         if "GOOGLE_CREDENTIALS" in st.secrets:
-            creds_json = st.secrets["GOOGLE_CREDENTIALS"]
-            # Convertiamo la stringa JSON dei secrets in un dizionario
-            creds_dict = json.loads(creds_json)
-            # Creiamo le credenziali in memoria
+            creds_str = st.secrets["GOOGLE_CREDENTIALS"]
+            
+            # --- FIX CRUCIALE: CLEANING ---
+            # Se la stringa contiene caratteri di controllo invisibili, strict=False aiuta
+            try:
+                creds_dict = json.loads(creds_str, strict=False)
+            except json.JSONDecodeError:
+                # Se fallisce ancora, proviamo a pulire i newline spuri
+                # Questo converte il JSON "formattato" in una riga sola valida
+                clean_str = creds_str.replace('\n', ' ')
+                creds_dict = json.loads(clean_str, strict=False)
+
             credentials = service_account.Credentials.from_service_account_info(creds_dict)
             return BetaAnalyticsDataClient(credentials=credentials)
         
-        # CASO 2: Siamo in Locale (PC)
+        # LOCALE: Legge dal file
         elif os.path.exists('credentials.json'):
             os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = 'credentials.json'
             return BetaAnalyticsDataClient()
@@ -130,12 +135,12 @@ def get_ga4_client():
         else:
             return None
     except Exception as e:
-        st.error(f"Errore critico Auth: {e}")
+        # Mostra l'errore a video per capire meglio se persiste
+        st.error(f"Errore Creazione Client: {e}")
         return None
 
 # --- 5. MOTORE DATI ---
 def get_ga4_data(prop_id, start, end, p_start, p_end, report_kind, comp_active):
-    # USIAMO LA FUNZIONE SICURA QUI SOTTO
     client = get_ga4_client()
     
     if not client:
@@ -150,38 +155,29 @@ def get_ga4_data(prop_id, start, end, p_start, p_end, report_kind, comp_active):
     dims = []
     mets = []
     
-    if report_kind == "Acquisizione Traffico":
-        dims = [Dimension(name="sessionSourceMedium")]
-        mets = [Metric(name="activeUsers"), Metric(name="sessions"), Metric(name="conversions")]
-    elif report_kind == "Campagne":
-        dims = [Dimension(name="campaignName")]
-        mets = [Metric(name="sessions"), Metric(name="conversions")]
-    elif report_kind == "Panoramica Eventi":
-        dims = [Dimension(name="eventName")]
-        mets = [Metric(name="eventCount"), Metric(name="totalUsers")]
-    elif report_kind == "Pagine e Schermate":
-        dims = [Dimension(name="pageTitle")]
-        mets = [Metric(name="screenPageViews"), Metric(name="activeUsers")]
-    elif report_kind == "Landing Page (Destinazione)":
-        dims = [Dimension(name="landingPage")]
-        mets = [Metric(name="sessions"), Metric(name="conversions")]
-    elif report_kind == "Monetizzazione (E-commerce)":
-        dims = [Dimension(name="itemName")]
+    # Configurazione Dimensioni
+    if report_kind == "Acquisizione Traffico": dims = [Dimension(name="sessionSourceMedium")]
+    elif report_kind == "Campagne": dims = [Dimension(name="campaignName")]
+    elif report_kind == "Panoramica Eventi": dims = [Dimension(name="eventName")]
+    elif report_kind == "Pagine e Schermate": dims = [Dimension(name="pageTitle")]
+    elif report_kind == "Landing Page (Destinazione)": dims = [Dimension(name="landingPage")]
+    elif report_kind == "Monetizzazione (E-commerce)": dims = [Dimension(name="itemName")]
+    elif report_kind == "Fidelizzazione (New vs Return)": dims = [Dimension(name="newVsReturning")]
+    elif report_kind == "Dettagli Demografici (Città)": dims = [Dimension(name="city")]
+    elif report_kind == "Paese / Lingua": dims = [Dimension(name="country")]
+    elif report_kind == "Tecnologia (Dispositivi)": dims = [Dimension(name="deviceCategory")]
+    else: dims = [Dimension(name="date")]
+
+    # Configurazione Metriche (Semplificata)
+    if "Monetizzazione" in report_kind:
         mets = [Metric(name="itemsPurchased"), Metric(name="totalRevenue")]
-    elif report_kind == "Fidelizzazione (New vs Return)":
-        dims = [Dimension(name="newVsReturning")]
-        mets = [Metric(name="activeUsers"), Metric(name="sessions")]
-    elif report_kind == "Dettagli Demografici (Città)":
-        dims = [Dimension(name="city")]
-        mets = [Metric(name="activeUsers")]
-    elif report_kind == "Paese / Lingua":
-        dims = [Dimension(name="country")]
-        mets = [Metric(name="activeUsers")]
-    elif report_kind == "Tecnologia (Dispositivi)":
-        dims = [Dimension(name="deviceCategory")]
-        mets = [Metric(name="activeUsers")]
+    elif "Eventi" in report_kind:
+        mets = [Metric(name="eventCount"), Metric(name="totalUsers")]
+    elif "Pagine" in report_kind:
+        mets = [Metric(name="screenPageViews"), Metric(name="activeUsers")]
+    elif "Campagne" in report_kind:
+         mets = [Metric(name="sessions"), Metric(name="conversions")]
     else:
-        dims = [Dimension(name="date")]
         mets = [Metric(name="activeUsers"), Metric(name="sessions"), Metric(name="conversions")]
 
     try:
@@ -221,7 +217,7 @@ def get_ga4_data(prop_id, start, end, p_start, p_end, report_kind, comp_active):
     except Exception as e:
         return "API_ERROR", str(e), None
 
-# --- 6. RENDERER GRAFICI ---
+# --- 6. RENDERER ---
 def render_chart_smart(df, report_kind):
     numeric_cols = [c for c in df.columns if c not in ['Dimensione', 'Data', 'date_obj']]
     if not numeric_cols: return
@@ -264,11 +260,11 @@ def generate_report_logic(reports, prop_id, d_start, d_end, p_start, p_end, comp
             results[rep_name] = {"df": df, "kpi_curr": kpi[0], "kpi_prev": kpi[1], "comment": comment}
         
         elif status == "MISSING_CREDENTIALS":
-            st.error("ERRORE CREDENZIALI: Controlla Secrets su Streamlit Cloud.")
+            st.error("ERRORE: Controlla i Secrets su Streamlit Cloud.")
             break
         elif status == "API_ERROR":
-             st.error(f"Errore API Google: {df}")
-             break
+            st.error(f"Errore API: {df}")
+            break
             
         progress_bar.progress((idx + 1) / len(reports))
     
@@ -369,8 +365,3 @@ if st.session_state.report_data:
             
         st.markdown('</div>', unsafe_allow_html=True)
         st.markdown("---")
-
-elif st.session_state.get('last_prop_id'):
-    pass
-else:
-    st.info("👈 Seleziona i parametri e clicca GENERA REPORT.")
