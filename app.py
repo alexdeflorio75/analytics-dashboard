@@ -12,9 +12,10 @@ import json
 import re
 import urllib.parse
 
-# --- 1. CONFIGURAZIONE PAGINA & URL PARAMS ---
+# --- 1. CONFIGURAZIONE PAGINA ---
 st.set_page_config(page_title="ADF Marketing Analyst", layout="wide", page_icon="📊")
 
+# Parametri URL
 query_params = st.query_params
 default_id = query_params.get("id", "")
 default_client = query_params.get("client", "")
@@ -23,7 +24,7 @@ default_context = query_params.get("context", "")
 if 'report_data' not in st.session_state:
     st.session_state.report_data = None
 
-# --- 2. DESIGN SYSTEM (BILANCIATO & PULITO) ---
+# --- 2. CSS DESIGN SYSTEM (SPAZIATO & PULITO) ---
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Lato:wght@400;700&family=Poppins:wght@600;700&display=swap');
@@ -40,7 +41,7 @@ st.markdown("""
         color: #0D0D0D !important;
     }
 
-    /* INPUT STYLING (Bordi visibili e spazi corretti) */
+    /* INPUT FIELDS */
     .stTextInput input, .stTextArea textarea, .stSelectbox div[data-baseweb="select"] > div {
         background-color: #FFFFFF !important;
         border: 1px solid #066C9C !important;
@@ -49,56 +50,43 @@ st.markdown("""
         font-size: 15px;
     }
     
-    /* SPAZIATURA SIDEBAR (Più respiro) */
+    /* SPAZIATURA SIDEBAR */
     [data-testid="stSidebar"] .block-container {
         padding-top: 2rem;
-        padding-bottom: 2rem;
         padding-left: 1.5rem;
         padding-right: 1.5rem;
     }
-    
-    /* Margine tra gli elementi della sidebar */
     .stTextInput, .stSelectbox, .stTextArea, .stCheckbox {
-        margin-bottom: 10px !important;
+        margin-bottom: 15px !important;
     }
 
-    /* PULSANTE GENERA (BIANCO SU ARANCIO - Ben visibile) */
+    /* PULSANTE (BIANCO SU ARANCIO) */
     div.stButton > button:first-child {
         background-color: #D15627 !important; 
-        color: #FFFFFF !important; /* Testo Bianco Puro */
+        color: #FFFFFF !important;
         border: 1px solid #B3441F !important;
         font-weight: 700;
         letter-spacing: 0.5px;
-        padding: 0.75rem 1.5rem; /* Più grande e cliccabile */
+        padding: 0.75rem 1.5rem;
         width: 100%;
-        margin-top: 20px;
-        margin-bottom: 10px;
+        margin-top: 15px;
         font-size: 16px;
     }
-    
-    div.stButton > button:first-child p {
-        color: #FFFFFF !important;
-    }
-
+    div.stButton > button:first-child p { color: #FFFFFF !important; }
     div.stButton > button:first-child:hover {
         background-color: #A33B1B !important;
-        color: #FFFFFF !important;
-        border-color: #FFFFFF !important;
-        transform: translateY(-2px); /* Piccolo effetto sollevamento */
         box-shadow: 0 4px 8px rgba(0,0,0,0.15);
     }
 
-    /* KPI e Titoli */
+    /* REPORT STYLE */
     div.report-section h3 {
         color: #D15627 !important; 
         border-bottom: 3px solid #D0E9F2;
         padding-bottom: 8px;
-        margin-top: 25px;
-        margin-bottom: 20px;
+        margin-top: 30px;
     }
     [data-testid="stMetricValue"] { color: #066C9C !important; font-weight: 700; }
 
-    /* Stampa */
     @media print {
         [data-testid="stSidebar"] {display: none !important;}
         .stButton {display: none !important;}
@@ -124,7 +112,7 @@ def ask_gemini_advanced(df, report_name, kpi_curr, kpi_prev, comparison_active, 
     if not ai_configured: return "⚠️ Chiave API AI mancante."
     
     data_preview = df.head(10).to_string(index=False)
-    context_str = f"Settore Cliente: '{business_context}'." if business_context else ""
+    context_str = f"Settore: '{business_context}'." if business_context else ""
     
     if comparison_active:
         kpi_text = ""
@@ -162,24 +150,38 @@ def ask_gemini_advanced(df, report_name, kpi_curr, kpi_prev, comparison_active, 
             return response.text
         except Exception as e: return f"⚠️ AI Error: {e}"
 
-# --- 4. AUTH ---
+# --- 4. AUTH (Debuggata e Sicura) ---
 def get_ga4_client():
     try:
         if "GOOGLE_CREDENTIALS" in st.secrets:
             creds_str = st.secrets["GOOGLE_CREDENTIALS"]
-            try: creds_dict = json.loads(creds_str, strict=False)
+            # TENTATIVO 1: Parsing Standard
+            try: 
+                creds_dict = json.loads(creds_str, strict=False)
             except json.JSONDecodeError:
+                # TENTATIVO 2: Fix Caratteri invisibili (ma manteniamo i \n della chiave)
+                # Sostituiamo i 'newline' di formattazione ma non quelli dentro le stringhe
                 clean_str = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', creds_str) 
-                clean_str = clean_str.replace('\n', '\\n')
+                # Re-inseriamo i newline necessari per la chiave privata se sono stati piallati
+                clean_str = clean_str.replace('PRIVATE KEY-----', 'PRIVATE KEY-----\\n')
                 if not clean_str.startswith('{'): clean_str = creds_str.replace('\n', ' ')
+                
                 try: creds_dict = json.loads(clean_str, strict=False)
-                except: return None
+                except Exception as e:
+                    st.error(f"Errore JSON Secrets: {e}. Controlla la formattazione su Streamlit Cloud.")
+                    return None
+            
             return BetaAnalyticsDataClient(credentials=service_account.Credentials.from_service_account_info(creds_dict))
+        
         elif os.path.exists('credentials.json'):
             os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = 'credentials.json'
             return BetaAnalyticsDataClient()
+        
+        else:
+            return None
+    except Exception as e:
+        st.error(f"Errore Autenticazione: {e}")
         return None
-    except: return None
 
 # --- 5. DATA ENGINE ---
 def get_ga4_data(prop_id, start, end, p_start, p_end, report_kind, comp_active):
@@ -258,12 +260,13 @@ def render_chart_smart(df, report_kind):
         ).properties(height=350)
         st.altair_chart(c, use_container_width=True)
 
-# --- 7. LOGIC ---
+# --- 7. LOGICA GENERAZIONE (FIX: Gestione Errori Reintrodotta) ---
 def generate_report(reports, pid, d1, d2, p1, p2, comp, context):
     res = {}
     bar = st.progress(0)
     for i, rep in enumerate(reports):
         status, df, kpi = get_ga4_data(pid, d1, d2, p1, p2, rep, comp)
+        
         if status == "OK" and not df.empty:
             if rep == "Panoramica Trend":
                 df['date_obj'] = pd.to_datetime(df['Dimensione'], format='%Y%m%d', errors='coerce')
@@ -272,16 +275,22 @@ def generate_report(reports, pid, d1, d2, p1, p2, comp, context):
                     df = df.sort_values(by='date_obj')
             comm = ask_gemini_advanced(df, rep, kpi[0], kpi[1], comp, context)
             res[rep] = {"df": df, "curr": kpi[0], "prev": kpi[1], "comm": comm}
+        
         elif status == "AUTH_ERROR":
-            st.error("Errore Autenticazione Cloud.")
-            break
+            st.error("❌ Errore Autenticazione: Impossibile leggere le credenziali. Verifica i Secrets.")
+            break # Stop loop
+        
+        elif status == "API_ERROR":
+            st.error(f"❌ Errore Google Analytics ({rep}): {df}. Verifica l'ID Proprietà o i permessi.")
+            # Non breakiamo, magari altri report funzionano, o meglio fermarsi per debug
+            break 
+            
         bar.progress((i + 1) / len(reports))
     bar.empty()
     return res
 
 # --- UI SIDEBAR ---
 with st.sidebar:
-    # LOGO
     if os.path.exists("logo.png"): st.image("logo.png", width=80)
     
     st.markdown("### Configurazione")
@@ -323,23 +332,19 @@ with st.sidebar:
     sel_grp = st.selectbox("Visualizza", ["REPORT COMPLETO"] + list(grp.keys()))
     target = [r for l in grp.values() for r in l] if sel_grp == "REPORT COMPLETO" else grp[sel_grp]
     
-    # PULSANTE
     if st.button("🚀 GENERA REPORT"):
         st.session_state.last_prop_id = property_id
         if not property_id: st.error("Manca ID")
         else: st.session_state.report_data = generate_report(target, property_id, s_s, s_e, p_s, p_e, comp_active, business_context)
 
-    # LINK GENERATOR
     with st.expander("🔗 Crea Link Condivisibile"):
         if property_id and client_name:
             safe_client = urllib.parse.quote(client_name)
             safe_ctx = urllib.parse.quote(business_context)
             params = f"?id={property_id}&client={safe_client}&context={safe_ctx}"
             final_domain = "https://analytics.alessandrodeflorio.it"
-            # Fallback
             if "streamlit.app" in str(st.query_params): 
                  final_domain = "https://alexdeflorio75-analytics-dashboard-app-pohqgy.streamlit.app"
-            
             full_link = final_domain + "/" + params
             st.code(full_link, language="text")
             st.caption("Copia e invia al cliente.")
