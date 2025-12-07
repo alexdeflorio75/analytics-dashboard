@@ -23,7 +23,7 @@ default_context = query_params.get("context", "")
 if 'report_data' not in st.session_state:
     st.session_state.report_data = None
 
-# --- 2. DESIGN SYSTEM (COMPACT & CONTRAST FIX) ---
+# --- 2. DESIGN SYSTEM (BILANCIATO & PULITO) ---
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Lato:wght@400;700&family=Poppins:wght@600;700&display=swap');
@@ -40,51 +40,61 @@ st.markdown("""
         color: #0D0D0D !important;
     }
 
-    /* INPUT COMPATTI */
+    /* INPUT STYLING (Bordi visibili e spazi corretti) */
     .stTextInput input, .stTextArea textarea, .stSelectbox div[data-baseweb="select"] > div {
         background-color: #FFFFFF !important;
         border: 1px solid #066C9C !important;
-        border-radius: 4px !important;
+        border-radius: 6px !important;
         color: #000000 !important;
-        font-size: 14px;
-        min-height: 0px !important;
+        font-size: 15px;
     }
     
-    /* Riduzione spazi sidebar */
+    /* SPAZIATURA SIDEBAR (Più respiro) */
     [data-testid="stSidebar"] .block-container {
-        padding-top: 1rem;
-        padding-bottom: 1rem;
+        padding-top: 2rem;
+        padding-bottom: 2rem;
+        padding-left: 1.5rem;
+        padding-right: 1.5rem;
     }
-    .stTextInput, .stSelectbox, .stTextArea {
-        margin-bottom: -15px !important; /* Compatta verticalmente */
+    
+    /* Margine tra gli elementi della sidebar */
+    .stTextInput, .stSelectbox, .stTextArea, .stCheckbox {
+        margin-bottom: 10px !important;
     }
 
-    /* PULSANTE GENERA (BIANCO SU ARANCIO) */
+    /* PULSANTE GENERA (BIANCO SU ARANCIO - Ben visibile) */
     div.stButton > button:first-child {
         background-color: #D15627 !important; 
-        color: #FFFFFF !important; /* Testo Bianco */
+        color: #FFFFFF !important; /* Testo Bianco Puro */
         border: 1px solid #B3441F !important;
         font-weight: 700;
-        letter-spacing: 1px;
-        padding: 0.5rem 1rem;
+        letter-spacing: 0.5px;
+        padding: 0.75rem 1.5rem; /* Più grande e cliccabile */
         width: 100%;
-        margin-top: 10px;
+        margin-top: 20px;
+        margin-bottom: 10px;
+        font-size: 16px;
     }
+    
     div.stButton > button:first-child p {
-        color: #FFFFFF !important; /* Forza il bianco anche sul paragrafo interno */
+        color: #FFFFFF !important;
     }
+
     div.stButton > button:first-child:hover {
         background-color: #A33B1B !important;
         color: #FFFFFF !important;
         border-color: #FFFFFF !important;
+        transform: translateY(-2px); /* Piccolo effetto sollevamento */
+        box-shadow: 0 4px 8px rgba(0,0,0,0.15);
     }
 
     /* KPI e Titoli */
     div.report-section h3 {
         color: #D15627 !important; 
         border-bottom: 3px solid #D0E9F2;
-        padding-bottom: 5px;
-        margin-top: 20px;
+        padding-bottom: 8px;
+        margin-top: 25px;
+        margin-bottom: 20px;
     }
     [data-testid="stMetricValue"] { color: #066C9C !important; font-weight: 700; }
 
@@ -269,19 +279,20 @@ def generate_report(reports, pid, d1, d2, p1, p2, comp, context):
     bar.empty()
     return res
 
-# --- UI SIDEBAR COMPATTA ---
+# --- UI SIDEBAR ---
 with st.sidebar:
-    # LOGO 80PX
+    # LOGO
     if os.path.exists("logo.png"): st.image("logo.png", width=80)
     
-    # INPUTS COMPATTI (Senza Headers grandi)
+    st.markdown("### Configurazione")
+    
     client_name = st.text_input("Cliente", value=default_client if default_client else "", placeholder="Nome Cliente")
     property_id = st.text_input("ID GA4", value=default_id if default_id else st.session_state.get('last_prop_id', ''))
     
-    # Text Area ridotta
-    business_context = st.text_area("Contesto", value=default_context if default_context else "", placeholder="Es. E-commerce...", height=68)
+    business_context = st.text_area("Contesto / Settore", value=default_context if default_context else "", placeholder="Es. E-commerce scarpe...", height=80)
     
-    # Date (Senza etichetta grande)
+    st.markdown("---")
+    
     date_opt = st.selectbox("Periodo", ("Ultimi 28 Giorni", "Ultimi 90 Giorni", "Ultimo Anno", "Personalizzato"))
     
     today = datetime.date.today()
@@ -291,14 +302,14 @@ with st.sidebar:
     else: start_date = st.date_input("Dal", today - datetime.timedelta(days=30))
     end_date = st.date_input("Al", today) if date_opt == "Personalizzato" else today
     
-    # Checkbox
-    comp_active = st.checkbox("Confronta periodo prec.", value=True)
+    comp_active = st.checkbox("Confronta periodo precedente", value=True)
     if comp_active:
         delta = end_date - start_date
         p_end = start_date - datetime.timedelta(days=1)
         p_start = p_end - delta
         s_s, s_e = start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d")
         p_s, p_e = p_start.strftime("%Y-%m-%d"), p_end.strftime("%Y-%m-%d")
+        st.caption(f"Vs: {p_start.strftime('%d/%m/%y')} - {p_end.strftime('%d/%m/%y')}")
     else:
         s_s, s_e = start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d")
         p_s, p_e = s_s, s_e
@@ -312,20 +323,20 @@ with st.sidebar:
     sel_grp = st.selectbox("Visualizza", ["REPORT COMPLETO"] + list(grp.keys()))
     target = [r for l in grp.values() for r in l] if sel_grp == "REPORT COMPLETO" else grp[sel_grp]
     
-    # PULSANTE ALTO CONTRASTO
+    # PULSANTE
     if st.button("🚀 GENERA REPORT"):
         st.session_state.last_prop_id = property_id
         if not property_id: st.error("Manca ID")
         else: st.session_state.report_data = generate_report(target, property_id, s_s, s_e, p_s, p_e, comp_active, business_context)
 
-    # LINK GENERATOR (Nascosto in Expander per risparmiare spazio)
+    # LINK GENERATOR
     with st.expander("🔗 Crea Link Condivisibile"):
         if property_id and client_name:
             safe_client = urllib.parse.quote(client_name)
             safe_ctx = urllib.parse.quote(business_context)
             params = f"?id={property_id}&client={safe_client}&context={safe_ctx}"
             final_domain = "https://analytics.alessandrodeflorio.it"
-            # Fallback se non siamo ancora sul dominio custom
+            # Fallback
             if "streamlit.app" in str(st.query_params): 
                  final_domain = "https://alexdeflorio75-analytics-dashboard-app-pohqgy.streamlit.app"
             
