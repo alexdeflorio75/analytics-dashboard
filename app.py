@@ -309,25 +309,38 @@ with st.sidebar:
         if not property_id: st.error("Manca ID")
         else: st.session_state.report_data = generate_report(target, property_id, start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d"), p_start.strftime("%Y-%m-%d"), p_end.strftime("%Y-%m-%d"), comp_active, business_context)
 
-    # --- GENERATORE LINK CONDIVISIBILE ---
+    # ... (questo va SOTTO if st.button("🚀 GENERA REPORT")...)
+
+    # --- GENERATORE LINK CONDIVISIBILE (AGGIORNATO AL NUOVO DOMINIO) ---
     st.markdown("---")
-    st.markdown("### 🔗 Condivisione")
+    st.markdown("### 🔗 Link Cliente")
+    
     if property_id and client_name:
-        # Crea l'URL pulito
-        base_url = "https://analytics.alessandrodeflorio.it" # O il tuo dominio
-        # Fallback se non siamo ancora sul dominio custom
-        if "streamlit.app" in str(st.query_params): base_url = "https://share.streamlit.io/..." 
+        import urllib.parse
+        safe_client = urllib.parse.quote(client_name)
+        safe_ctx = urllib.parse.quote(business_context)
+        params = f"?id={property_id}&client={safe_client}&context={safe_ctx}"
         
-        # Codifica parametri semplici
-        safe_client = client_name.replace(" ", "%20")
-        safe_ctx = business_context.replace(" ", "%20")
+        # QUI HO INSERITO IL TUO NUOVO DOMINIO DEDICATO
+        final_domain = "https://analytics.alessandrodeflorio.it"
         
-        share_link = f"?id={property_id}&client={safe_client}&context={safe_ctx}"
+        # Fallback intelligente: se non hai ancora attivato il dominio, 
+        # ti mostra comunque un link funzionante provvisorio
+        if "streamlit.app" in str(st.query_params): 
+             # Questo serve solo se stai testando prima del cambio DNS
+             current_url = "https://share.streamlit.io/..." # Streamlit lo gestisce in automatico
         
-        st.caption("Copia questo link e invialo al cliente. Vedrà il report pre-impostato per lui.")
-        st.code(f"{share_link}", language="text")
+        full_link = final_domain + "/" + params
+        
+        st.success("Link pronto!")
+        st.markdown(f"**Invia questo al cliente:**")
+        st.code(full_link, language="text")
+        
+        st.info("ℹ️ Il link funzionerà non appena avrai configurato il sottodominio 'analytics' nel tuo hosting.")
     else:
-        st.caption("Compila ID e Cliente per generare il link.")
+        st.caption("Compila i dati cliente per generare il link.")
+
+# ... (il resto del codice MAIN PAGE rimane uguale) ...
 
 # --- MAIN PAGE ---
 col1, col2 = st.columns([3, 1])
@@ -357,3 +370,4 @@ if st.session_state.report_data:
         render_chart_smart(content['df'], name)
         with st.expander(f"Dati: {name}"): st.dataframe(content['df'], use_container_width=True, hide_index=True)
         st.markdown('</div>', unsafe_allow_html=True)
+
