@@ -10,12 +10,11 @@ import streamlit.components.v1 as components
 import altair as alt 
 import json
 import re
+import urllib.parse
 
 # --- 1. CONFIGURAZIONE PAGINA & URL PARAMS ---
 st.set_page_config(page_title="ADF Marketing Analyst", layout="wide", page_icon="📊")
 
-# Gestione Parametri URL (Smart Link)
-# Se il link contiene ?id=... leggiamo quei valori per pre-compilare
 query_params = st.query_params
 default_id = query_params.get("id", "")
 default_client = query_params.get("client", "")
@@ -24,7 +23,7 @@ default_context = query_params.get("context", "")
 if 'report_data' not in st.session_state:
     st.session_state.report_data = None
 
-# --- 2. DESIGN SYSTEM (CONTRASTO & BORDI FIX) ---
+# --- 2. DESIGN SYSTEM (COMPACT & CONTRAST FIX) ---
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Lato:wght@400;700&family=Poppins:wght@600;700&display=swap');
@@ -41,44 +40,53 @@ st.markdown("""
         color: #0D0D0D !important;
     }
 
-    /* FIX INPUT: Bordi scuri e sfondo bianco per visibilità */
+    /* INPUT COMPATTI */
     .stTextInput input, .stTextArea textarea, .stSelectbox div[data-baseweb="select"] > div {
         background-color: #FFFFFF !important;
-        border: 2px solid #066C9C !important; /* Bordo Blu Forte */
-        border-radius: 6px !important;
-        color: #000000 !important; /* Testo input Nero assoluto */
-        font-weight: 500;
+        border: 1px solid #066C9C !important;
+        border-radius: 4px !important;
+        color: #000000 !important;
+        font-size: 14px;
+        min-height: 0px !important;
     }
     
-    /* Label Input più visibili */
-    .stTextInput label, .stSelectbox label, .stTextArea label {
-        color: #066C9C !important;
-        font-weight: 800 !important;
-        font-size: 14px !important;
+    /* Riduzione spazi sidebar */
+    [data-testid="stSidebar"] .block-container {
+        padding-top: 1rem;
+        padding-bottom: 1rem;
+    }
+    .stTextInput, .stSelectbox, .stTextArea {
+        margin-bottom: -15px !important; /* Compatta verticalmente */
     }
 
-    /* PULSANTE GENERA (Alto Contrasto) */
+    /* PULSANTE GENERA (BIANCO SU ARANCIO) */
     div.stButton > button:first-child {
         background-color: #D15627 !important; 
-        color: #FFFFFF !important;
+        color: #FFFFFF !important; /* Testo Bianco */
         border: 1px solid #B3441F !important;
         font-weight: 700;
         letter-spacing: 1px;
-        padding: 0.8rem 1.2rem;
+        padding: 0.5rem 1rem;
+        width: 100%;
+        margin-top: 10px;
+    }
+    div.stButton > button:first-child p {
+        color: #FFFFFF !important; /* Forza il bianco anche sul paragrafo interno */
     }
     div.stButton > button:first-child:hover {
         background-color: #A33B1B !important;
-        box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        color: #FFFFFF !important;
+        border-color: #FFFFFF !important;
     }
 
-    /* KPI e Titoli Report */
+    /* KPI e Titoli */
     div.report-section h3 {
         color: #D15627 !important; 
         border-bottom: 3px solid #D0E9F2;
-        padding-bottom: 10px;
+        padding-bottom: 5px;
+        margin-top: 20px;
     }
     [data-testid="stMetricValue"] { color: #066C9C !important; font-weight: 700; }
-    [data-testid="stMetricLabel"] { color: #54A1BF !important; font-weight: 600; }
 
     /* Stampa */
     @media print {
@@ -115,27 +123,22 @@ def ask_gemini_advanced(df, report_name, kpi_curr, kpi_prev, comparison_active, 
             diff = v - prev
             perc = ((diff/prev)*100) if prev > 0 else 0
             kpi_text += f"- {k}: {v} (Var: {perc:.1f}%)\n"
-        task = "Analizza la variazione (Trend) e ipotizza cause."
+        task = "Analizza Trend e cause."
     else:
         kpi_text = ""
         for k, v in kpi_curr.items():
             kpi_text += f"- {k}: {v}\n"
-        task = "Analizza la distribuzione attuale e i volumi."
+        task = "Analizza volumi attuali."
 
     prompt = f"""
     Sei un Senior Analyst (ADF Marketing). {context_str}
     Report: {report_name}
-    
-    KPI:
-    {kpi_text}
-    
-    DATI (Top 10):
-    {data_preview}
-    
+    KPI: {kpi_text}
+    DATI: {data_preview}
     1. {task}
-    2. Voto sintetico (1-10).
-    3. Un consiglio operativo breve.
-    No saluti. Markdown pulito.
+    2. Voto (1-10).
+    3. Consiglio operativo.
+    Sintetico. No saluti.
     """
     
     try:
@@ -266,18 +269,21 @@ def generate_report(reports, pid, d1, d2, p1, p2, comp, context):
     bar.empty()
     return res
 
-# --- UI SIDEBAR ---
+# --- UI SIDEBAR COMPATTA ---
 with st.sidebar:
-    if os.path.exists("logo.png"): st.image("logo.png", width=100)
+    # LOGO 80PX
+    if os.path.exists("logo.png"): st.image("logo.png", width=80)
     
-    st.markdown("### Configurazione Cliente")
-    # PRE-COMPILAZIONE DA URL (Se disponibile)
-    client_name = st.text_input("Cliente / Sito Web", value=default_client if default_client else "", placeholder="Es. Key4Sales.it")
-    property_id = st.text_input("ID Proprietà (Numerico)", value=default_id if default_id else st.session_state.get('last_prop_id', ''))
-    business_context = st.text_area("Settore / Contesto", value=default_context if default_context else "", placeholder="Es. E-commerce scarpe...")
+    # INPUTS COMPATTI (Senza Headers grandi)
+    client_name = st.text_input("Cliente", value=default_client if default_client else "", placeholder="Nome Cliente")
+    property_id = st.text_input("ID GA4", value=default_id if default_id else st.session_state.get('last_prop_id', ''))
     
-    st.divider()
+    # Text Area ridotta
+    business_context = st.text_area("Contesto", value=default_context if default_context else "", placeholder="Es. E-commerce...", height=68)
+    
+    # Date (Senza etichetta grande)
     date_opt = st.selectbox("Periodo", ("Ultimi 28 Giorni", "Ultimi 90 Giorni", "Ultimo Anno", "Personalizzato"))
+    
     today = datetime.date.today()
     if date_opt == "Ultimi 28 Giorni": start_date = today - datetime.timedelta(days=28)
     elif date_opt == "Ultimi 90 Giorni": start_date = today - datetime.timedelta(days=90)
@@ -285,62 +291,49 @@ with st.sidebar:
     else: start_date = st.date_input("Dal", today - datetime.timedelta(days=30))
     end_date = st.date_input("Al", today) if date_opt == "Personalizzato" else today
     
-    comp_active = st.checkbox("Confronta periodo precedente", value=True)
+    # Checkbox
+    comp_active = st.checkbox("Confronta periodo prec.", value=True)
     if comp_active:
         delta = end_date - start_date
         p_end = start_date - datetime.timedelta(days=1)
         p_start = p_end - delta
-        st.caption(f"Vs: {p_start.strftime('%d/%m/%y')} - {p_end.strftime('%d/%m/%y')}")
-    else: p_start, p_end = start_date, end_date
+        s_s, s_e = start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d")
+        p_s, p_e = p_start.strftime("%Y-%m-%d"), p_end.strftime("%Y-%m-%d")
+    else:
+        s_s, s_e = start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d")
+        p_s, p_e = s_s, s_e
 
-    st.divider()
     grp = {
         "📊 Panoramica": ["Panoramica Trend"], "📥 Acquisizione": ["Acquisizione Traffico", "Campagne"],
         "👍 Coinvolgimento": ["Panoramica Eventi", "Pagine e Schermate", "Landing Page"],
         "💰 Monetizzazione": ["Monetizzazione"], "❤️ Fidelizzazione": ["Fidelizzazione"],
         "🌍 Utente": ["Città", "Dispositivi"]
     }
-    sel_grp = st.selectbox("Sezione Report", ["REPORT COMPLETO"] + list(grp.keys()))
+    sel_grp = st.selectbox("Visualizza", ["REPORT COMPLETO"] + list(grp.keys()))
     target = [r for l in grp.values() for r in l] if sel_grp == "REPORT COMPLETO" else grp[sel_grp]
     
-    st.write("")
+    # PULSANTE ALTO CONTRASTO
     if st.button("🚀 GENERA REPORT"):
         st.session_state.last_prop_id = property_id
         if not property_id: st.error("Manca ID")
-        else: st.session_state.report_data = generate_report(target, property_id, start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d"), p_start.strftime("%Y-%m-%d"), p_end.strftime("%Y-%m-%d"), comp_active, business_context)
+        else: st.session_state.report_data = generate_report(target, property_id, s_s, s_e, p_s, p_e, comp_active, business_context)
 
-    # ... (questo va SOTTO if st.button("🚀 GENERA REPORT")...)
-
-    # --- GENERATORE LINK CONDIVISIBILE (AGGIORNATO AL NUOVO DOMINIO) ---
-    st.markdown("---")
-    st.markdown("### 🔗 Link Cliente")
-    
-    if property_id and client_name:
-        import urllib.parse
-        safe_client = urllib.parse.quote(client_name)
-        safe_ctx = urllib.parse.quote(business_context)
-        params = f"?id={property_id}&client={safe_client}&context={safe_ctx}"
-        
-        # QUI HO INSERITO IL TUO NUOVO DOMINIO DEDICATO
-        final_domain = "https://analytics.alessandrodeflorio.it"
-        
-        # Fallback intelligente: se non hai ancora attivato il dominio, 
-        # ti mostra comunque un link funzionante provvisorio
-        if "streamlit.app" in str(st.query_params): 
-             # Questo serve solo se stai testando prima del cambio DNS
-             current_url = "https://share.streamlit.io/..." # Streamlit lo gestisce in automatico
-        
-        full_link = final_domain + "/" + params
-        
-        st.success("Link pronto!")
-        st.markdown(f"**Invia questo al cliente:**")
-        st.code(full_link, language="text")
-        
-        st.info("ℹ️ Il link funzionerà non appena avrai configurato il sottodominio 'analytics' nel tuo hosting.")
-    else:
-        st.caption("Compila i dati cliente per generare il link.")
-
-# ... (il resto del codice MAIN PAGE rimane uguale) ...
+    # LINK GENERATOR (Nascosto in Expander per risparmiare spazio)
+    with st.expander("🔗 Crea Link Condivisibile"):
+        if property_id and client_name:
+            safe_client = urllib.parse.quote(client_name)
+            safe_ctx = urllib.parse.quote(business_context)
+            params = f"?id={property_id}&client={safe_client}&context={safe_ctx}"
+            final_domain = "https://analytics.alessandrodeflorio.it"
+            # Fallback se non siamo ancora sul dominio custom
+            if "streamlit.app" in str(st.query_params): 
+                 final_domain = "https://alexdeflorio75-analytics-dashboard-app-pohqgy.streamlit.app"
+            
+            full_link = final_domain + "/" + params
+            st.code(full_link, language="text")
+            st.caption("Copia e invia al cliente.")
+        else:
+            st.info("Compila i dati per il link.")
 
 # --- MAIN PAGE ---
 col1, col2 = st.columns([3, 1])
@@ -351,7 +344,7 @@ with col1:
 with col2:
     st.write("")
     components.html("""<script>function printPage() { window.print(); }</script>
-    <button onclick="printPage()" style="background-color:#D15627; color:white; border:none; padding:10px 20px; border-radius:5px; font-weight:bold; cursor:pointer; font-family:sans-serif;">🖨️ Stampa PDF</button>""", height=60)
+    <button onclick="printPage()" style="background-color:#D15627; color:white; border:none; padding:10px 20px; border-radius:5px; font-weight:bold; cursor:pointer; font-family:sans-serif;">🖨️ Salva PDF</button>""", height=60)
 
 if st.session_state.report_data:
     data = st.session_state.report_data
@@ -370,4 +363,3 @@ if st.session_state.report_data:
         render_chart_smart(content['df'], name)
         with st.expander(f"Dati: {name}"): st.dataframe(content['df'], use_container_width=True, hide_index=True)
         st.markdown('</div>', unsafe_allow_html=True)
-
