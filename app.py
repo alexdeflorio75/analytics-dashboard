@@ -13,10 +13,9 @@ import re
 import urllib.parse
 import base64
 
-# --- 1. CONFIGURAZIONE ---
+# --- 1. CONFIGURAZIONE PAGINA ---
 st.set_page_config(page_title="ADF Marketing Analyst", layout="wide", page_icon="📊")
 
-# Recupero parametri URL (Link Condiviso)
 query_params = st.query_params
 default_id = query_params.get("id", "")
 default_client = query_params.get("client", "")
@@ -25,73 +24,86 @@ default_context = query_params.get("context", "")
 if 'report_data' not in st.session_state:
     st.session_state.report_data = None
 
-# Funzione per convertire il logo in base64 (per vederlo nel PDF)
+# Funzione Logo
 def get_base64_logo():
     if os.path.exists("logo.png"):
         with open("logo.png", "rb") as f:
             data = f.read()
         return base64.b64encode(data).decode()
     return ""
-
 logo_b64 = get_base64_logo()
 
-# --- 2. CSS AVANZATO (LAYOUT STAMPA & DESIGN) ---
+# --- 2. CSS DESIGN SYSTEM & PRINT FIX ---
 st.markdown(f"""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Lato:wght@400;700&family=Poppins:wght@600;700&display=swap');
-    
-    /* --- STILI GENERALI --- */
+
     .stApp {{ background-color: #F9F9F9; }}
-    html, body, p, div, label, .stMarkdown {{ font-family: 'Lato', sans-serif !important; color: #2D3233 !important; }}
+    html, body, p, div, label, .stMarkdown, .stRadio label {{ font-family: 'Lato', sans-serif !important; color: #2D3233 !important; }}
     h1, h2, h3, h4 {{ font-family: 'Poppins', sans-serif !important; color: #0D0D0D !important; }}
-    
-    /* Input & Sidebar */
+
+    /* INPUT */
     .stTextInput input, .stTextArea textarea, .stSelectbox div[data-baseweb="select"] > div {{
-        background-color: #FFFFFF !important; border: 1px solid #066C9C !important; border-radius: 4px; font-size: 14px;
+        background-color: #FFFFFF !important; border: 1px solid #066C9C !important; border-radius: 6px !important; color: #000000 !important; font-size: 15px;
     }}
+    
+    /* SIDEBAR */
+    [data-testid="stSidebar"] .block-container {{ padding-top: 2rem; padding-left: 1.5rem; padding-right: 1.5rem; }}
+    .stTextInput, .stSelectbox, .stTextArea, .stCheckbox {{ margin-bottom: 15px !important; }}
+
+    /* PULSANTE */
     div.stButton > button:first-child {{
         background-color: #D15627 !important; color: #FFFFFF !important; border: 1px solid #B3441F !important;
-        font-weight: 700; width: 100%; margin-top: 10px;
+        font-weight: 700; width: 100%; margin-top: 15px; font-size: 16px;
     }}
-    
-    /* --- LAYOUT DI STAMPA (LA MAGIA PDF) --- */
+    div.stButton > button:first-child:hover {{ background-color: #A33B1B !important; }}
+
+    /* REPORT */
+    div.report-section h3 {{ color: #D15627 !important; border-bottom: 3px solid #D0E9F2; padding-bottom: 8px; margin-top: 30px; }}
+    [data-testid="stMetricValue"] {{ color: #066C9C !important; font-weight: 700; }}
+
+    /* --- PRINT CSS FIX (SOLUZIONE DEFINITIVA) --- */
     @media print {{
-        /* 1. Nascondi TUTTO ciò che non serve */
-        [data-testid="stSidebar"], section[data-testid="stSidebar"], 
-        .stButton, .stDeployButton, header, footer, 
-        .stExpander, .element-container:has(iframe) {{
+        /* Nascondi Sidebar, Header Streamlit, Pulsanti */
+        [data-testid="stSidebar"], 
+        header[data-testid="stHeader"], 
+        .stButton, 
+        button, 
+        .stDeployButton,
+        footer {{
             display: none !important;
         }}
-        
-        /* 2. Resetta margini e sfondi */
-        .block-container {{
-            padding: 0 !important; margin: 0 !important; background-color: white !important; max-width: 100% !important;
-        }}
-        .stApp {{ background-color: white !important; }}
-        
-        /* 3. Mostra l'HEADER DI STAMPA (Nascosto a video) */
+
+        /* Mostra Header Personalizzato */
         #print-header {{
             display: block !important;
-            margin-bottom: 30px;
-            padding-bottom: 20px;
+            margin-bottom: 20px;
+            padding: 20px;
             border-bottom: 2px solid #D15627;
         }}
-        
-        /* 4. Gestione interruzioni pagina */
-        .report-section {{ 
-            page-break-inside: avoid; 
-            margin-bottom: 40px;
-            border-bottom: 1px solid #eee;
-            padding-bottom: 20px;
+
+        /* Reset Layout */
+        .block-container {{
+            max-width: 100% !important;
+            padding: 0 !important;
+            margin: 0 !important;
         }}
         
-        /* 5. Forza colori grafici */
-        * {{ -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }}
+        .stApp {{
+            background: white !important;
+            margin: 0 !important;
+        }}
+
+        /* Forza visibilità grafici */
+        canvas, .stVegaLiteChart {{
+            break-inside: avoid;
+            visibility: visible !important;
+            max-width: 100% !important;
+        }}
     }}
     
-    /* Nascondi header di stampa a video */
+    /* Header nascosto a video */
     #print-header {{ display: none; }}
-    
 </style>
 """, unsafe_allow_html=True)
 
@@ -110,7 +122,6 @@ def ask_gemini_advanced(df, report_name, kpi_curr, kpi_prev, comparison_active, 
     if not ai_configured: return "⚠️ Chiave API AI mancante."
     data_preview = df.head(10).to_string(index=False)
     context_str = f"Settore: '{business_context}'." if business_context else ""
-    
     if comparison_active:
         kpi_text = ""
         for k, v in kpi_curr.items():
@@ -134,7 +145,7 @@ def ask_gemini_advanced(df, report_name, kpi_curr, kpi_prev, comparison_active, 
             return model.generate_content(prompt).text
         except Exception as e: return f"⚠️ AI Error: {e}"
 
-# --- 4. AUTH & DATA ---
+# --- 4. AUTH ---
 def get_ga4_client():
     try:
         if "GOOGLE_CREDENTIALS" in st.secrets:
@@ -153,6 +164,7 @@ def get_ga4_client():
         return None
     except: return None
 
+# --- 5. DATA ENGINE ---
 def get_ga4_data(prop_id, start, end, p_start, p_end, report_kind, comp_active, retry_mode=False):
     client = get_ga4_client()
     if not client: return "AUTH_ERROR", None, None
@@ -193,9 +205,7 @@ def get_ga4_data(prop_id, start, end, p_start, p_end, report_kind, comp_active, 
                 res_p = client.run_report(req_p)
                 for m in mets: prev[metric_map.get(m.name, m.name)] = 0
                 for row in res_p.rows:
-                    for i, m in enumerate(mets): 
-                        val = row.metric_values[i].value
-                        prev[metric_map.get(m.name, m.name)] += float(val) if val else 0.0
+                    for i, m in enumerate(mets): prev[metric_map.get(m.name, m.name)] += float(row.metric_values[i].value)
         return "OK", df, (curr, prev)
     except Exception as e:
         if report_kind == "Monetizzazione" and not retry_mode: return get_ga4_data(prop_id, start, end, p_start, p_end, report_kind, comp_active, retry_mode=True)
@@ -228,20 +238,20 @@ def generate_report(reports, pid, d1, d2, p1, p2, comp, context):
                     df = df.sort_values(by='date_obj')
             comm = ask_gemini_advanced(df, rep, kpi[0], kpi[1], comp, context)
             res[rep] = {"df": df, "curr": kpi[0], "prev": kpi[1], "comm": comm, "error": None}
+        elif status == "INCOMPATIBLE": res[rep] = {"error": "Dati non disponibili (es. E-commerce assente)."}
         elif status == "AUTH_ERROR": st.error("Errore Autenticazione."); break
-        elif status == "API_ERROR": res[rep] = {"error": f"Dati non disponibili ({df})"}
+        elif status == "API_ERROR": res[rep] = {"error": f"Errore Tecnico: {df}"}
         bar.progress((i + 1) / len(reports))
     bar.empty()
     return res
 
-# --- UI SIDEBAR ---
+# --- UI ---
 with st.sidebar:
     if os.path.exists("logo.png"): st.image("logo.png", width=80)
     st.markdown("### Configurazione")
-    client_name = st.text_input("Cliente", value=default_client, placeholder="Es. Mario Rossi")
+    client_name = st.text_input("Cliente", value=default_client, placeholder="Nome Cliente")
     property_id = st.text_input("ID GA4", value=default_id if default_id else st.session_state.get('last_prop_id', ''))
     business_context = st.text_area("Contesto", value=default_context, placeholder="Settore...", height=80)
-    
     st.markdown("---")
     date_opt = st.selectbox("Periodo", ("Ultimi 28 Giorni", "Ultimi 90 Giorni", "Ultimo Anno", "Personalizzato"))
     today = datetime.date.today()
@@ -250,7 +260,6 @@ with st.sidebar:
     elif date_opt == "Ultimo Anno": start_date = today - datetime.timedelta(days=365)
     else: start_date = st.date_input("Dal", today - datetime.timedelta(days=30))
     end_date = st.date_input("Al", today) if date_opt == "Personalizzato" else today
-    
     comp_active = st.checkbox("Confronta periodo precedente", value=True)
     if comp_active:
         delta = end_date - start_date
@@ -259,7 +268,7 @@ with st.sidebar:
         s_s, s_e = start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d")
         p_s, p_e = p_start.strftime("%Y-%m-%d"), p_end.strftime("%Y-%m-%d")
         vs_text = f"{p_start.strftime('%d/%m/%y')} - {p_end.strftime('%d/%m/%y')}"
-    else: s_s, s_e = start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d"); p_s, p_e = s_s, s_e; vs_text = "Nessun confronto"
+    else: s_s, s_e = start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d"); p_s, p_e = s_s, s_e; vs_text = ""
 
     grp = { "📊 Panoramica": ["Panoramica Trend"], "📥 Acquisizione": ["Acquisizione Traffico", "Campagne"], "👍 Coinvolgimento": ["Panoramica Eventi", "Pagine e Schermate", "Landing Page"], "💰 Monetizzazione": ["Monetizzazione"], "❤️ Fidelizzazione": ["Fidelizzazione"], "🌍 Utente": ["Città", "Dispositivi"] }
     sel_grp = st.selectbox("Visualizza", ["REPORT COMPLETO"] + list(grp.keys()))
@@ -273,13 +282,12 @@ with st.sidebar:
     with st.expander("🔗 Crea Link Condivisibile"):
         if property_id and client_name:
             safe_client = urllib.parse.quote(client_name); safe_ctx = urllib.parse.quote(business_context)
-            # URL DIRETTO E SICURO DI STREAMLIT (Per evitare problemi DNS)
-            final_domain = "https://alexdeflorio75-analytics-dashboard-app-pohqgy.streamlit.app"
+            # URL AGGIORNATO AL TUO APP URL DI STREAMLIT (adf-analytics)
+            final_domain = "https://adf-analytics.streamlit.app"
             st.code(f"{final_domain}/?id={property_id}&client={safe_client}&context={safe_ctx}", language="text")
         else: st.info("Compila i dati.")
 
-# --- MAIN PAGE & PRINT HEADER ---
-# Questo blocco HTML appare SOLO in stampa
+# --- MAIN ---
 if client_name:
     st.markdown(f"""
     <div id="print-header">
@@ -311,8 +319,7 @@ if st.session_state.report_data:
     for name, content in data.items():
         st.markdown('<div class="report-section">', unsafe_allow_html=True)
         st.markdown(f"### 📌 {name}")
-        if content.get("error"):
-            st.warning(content["error"])
+        if content.get("error"): st.warning(content["error"])
         else:
             cur, pre = content['curr'], content['prev']
             cols = st.columns(len(cur))
