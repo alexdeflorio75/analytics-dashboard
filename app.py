@@ -17,7 +17,7 @@ st.set_page_config(page_title="ADF Marketing Analyst", layout="wide", page_icon=
 if 'report_data' not in st.session_state:
     st.session_state.report_data = None
 
-# --- 2. CSS AVANZATO (STAMPA & UI) ---
+# --- 2. CSS STAMPA & UI (Layout Pulito) ---
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Lato:wght@400;700&family=Poppins:wght@600;700&display=swap');
@@ -45,31 +45,23 @@ st.markdown("""
     div.report-section h3 { color: #D15627 !important; border-bottom: 2px solid #D0E9F2; padding-bottom: 10px; }
     .stAlert { background-color: #E6F4F9; border-left: 5px solid #066C9C; color: #2D3233; }
 
-    /* --- REGOLE DI STAMPA PERFETTA --- */
+    /* --- REGOLE DI STAMPA PERFETTA (PDF) --- */
     @media print {
-        /* Nascondi interfaccia Streamlit */
+        /* 1. Nascondi Sidebar (dove ora c'è il tasto stampa), Header, Footer e UI Streamlit */
         [data-testid="stSidebar"], .stButton, button, header, footer, #MainMenu, .stDeployButton, [data-testid="stToolbar"] {
             display: none !important;
         }
         
-        /* NASCONDI I BOX VUOTI (IFRAME PULSANTE) */
-        /* Questo nasconde qualsiasi elemento che contenga un iframe o sia vuoto */
-        iframe { display: none !important; height: 0 !important; width: 0 !important; }
-        .element-container:has(iframe) { display: none !important; margin: 0 !important; height: 0 !important; }
-        div[data-testid="stVerticalBlock"] > div:has(iframe) { display: none !important; }
-
-        /* Resetta layout A4 */
-        [data-testid="stHorizontalBlock"] { display: block !important; }
-        [data-testid="column"] { width: 100% !important; display: block !important; margin: 0 !important; padding: 0 !important; flex: none !important; }
-
+        /* 2. Resetta layout per A4 */
         .stApp, .block-container {
             background-color: white !important; margin: 0 !important; padding: 0 !important; max-width: 100vw !important;
         }
 
-        /* FORZA APERTURA DETTAGLI */
+        /* 3. Forza apertura expander (Dettagli) */
         .streamlit-expanderContent { display: block !important; visibility: visible !important; height: auto !important; opacity: 1 !important; }
         .streamlit-expanderHeader { color: #066C9C !important; font-weight: bold !important; border-bottom: 1px solid #ccc; } 
 
+        /* 4. Gestione interruzioni pagina */
         .report-section {
             page-break-inside: avoid; border: 1px solid #ddd; padding: 20px; margin-bottom: 20px; break-inside: avoid;
         }
@@ -80,7 +72,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- 3. AI CONFIG ---
+# --- 3. AI CONFIG & INTELLIGENT MODEL SELECTOR ---
 def configure_ai():
     try:
         if "GOOGLE_API_KEY" in st.secrets:
@@ -91,7 +83,29 @@ def configure_ai():
 
 ai_configured = configure_ai()
 
-# FUNZIONE AI (FIX: USA IL NOME MODELLO COMPLETO TROVATO SUL SERVER)
+# FUNZIONE INTELLIGENTE: Prova diversi modelli finché uno non funziona
+def get_working_response(prompt):
+    # Lista di priorità: Flash (veloce) -> Pro (potente) -> Legacy
+    # Usiamo i nomi completi 'models/...' per evitare errori 404
+    candidates = [
+        'models/gemini-1.5-flash',
+        'models/gemini-1.5-pro',
+        'models/gemini-pro'
+    ]
+    
+    errors = []
+    for model_name in candidates:
+        try:
+            model = genai.GenerativeModel(model_name)
+            response = model.generate_content(prompt)
+            return response.text # Se funziona, ritorna subito
+        except Exception as e:
+            errors.append(f"{model_name}: {str(e)}")
+            continue # Se fallisce, prova il prossimo
+            
+    # Se arriviamo qui, tutti hanno fallito
+    return f"⚠️ Tutti i modelli AI hanno fallito. Dettagli errori: {'; '.join(errors)}"
+
 def ask_gemini_advanced(df, report_name, kpi_curr, kpi_prev, comparison_active, business_context):
     if not ai_configured: return "⚠️ Chiave API AI mancante."
     
@@ -128,19 +142,7 @@ def ask_gemini_advanced(df, report_name, kpi_curr, kpi_prev, comparison_active, 
     3. 💡 **Azione Consigliata:** Una sola azione pratica e specifica da implementare subito.
     """
     
-    try:
-        # FIX: Uso il nome ESATTO che abbiamo visto nel tuo screenshot
-        model = genai.GenerativeModel('models/gemini-1.5-flash')
-        response = model.generate_content(prompt)
-        return response.text
-    except Exception as e_flash:
-        # Fallback estremo: se fallisce flash, prova il vecchio pro o stampa errore
-        try:
-            model_old = genai.GenerativeModel('models/gemini-pro')
-            response = model_old.generate_content(prompt)
-            return response.text
-        except Exception as e_final:
-             return f"⚠️ Errore AI: {str(e_flash)}"
+    return get_working_response(prompt)
 
 # --- 4. AUTH ---
 def get_ga4_client():
@@ -305,33 +307,35 @@ with st.sidebar:
         if not property_id: st.error("Manca ID")
         else: st.session_state.report_data = generate_report(target, property_id, start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d"), p_start.strftime("%Y-%m-%d"), p_end.strftime("%Y-%m-%d"), comp_active, business_context)
 
-col1, col2 = st.columns([3, 1])
-with col1:
-    main_title = f"Report: {client_name}" if client_name else "Report Analitico GA4"
-    st.title(main_title)
-    
-    comp_status = f"✅ Sì (vs {p_start_str} - {p_end_str})" if comp_active else "❌ No"
-    header_html = f"""
-    <div style="background-color: #F0F2F6; padding: 15px; border-radius: 10px; margin-bottom: 25px; border-left: 5px solid #D15627;">
-        <p style="margin:0; font-size: 14px; color:#2D3233;"><b>📅 Periodo:</b> {start_date.strftime('%d/%m/%Y')} - {end_date.strftime('%d/%m/%Y')}</p>
-        <p style="margin:0; font-size: 14px; color:#2D3233;"><b>🏪 Contesto:</b> {business_context if business_context else 'Non specificato'}</p>
-        <p style="margin:0; font-size: 14px; color:#2D3233;"><b>🔄 Confronto:</b> {comp_status}</p>
-    </div>
-    """
-    st.markdown(header_html, unsafe_allow_html=True)
-
-with col2:
+    # --- NUOVO POSIZIONAMENTO TASTO STAMPA (SIDEBAR) ---
+    # Questo elimina il problema dei "box grigi" nella colonna di destra in stampa
     st.write("")
-    # Pulsante Stampa
+    st.divider()
     print_btn = """
-    <div style="display: flex; justify-content: flex-end;">
+    <div style="display: flex; justify-content: center;">
         <button onclick="window.parent.print()" style="
-            background-color: #D15627; color: white; border: none; padding: 10px 20px; border-radius: 5px; font-weight: bold; cursor: pointer; font-family: sans-serif; box-shadow: 0 2px 5px rgba(0,0,0,0.2);">
+            background-color: #D15627; color: white; border: none; padding: 12px 24px; border-radius: 8px; font-weight: bold; cursor: pointer; font-family: sans-serif; width: 100%; box-shadow: 0 2px 5px rgba(0,0,0,0.2);">
             🖨️ Stampa PDF
         </button>
     </div>
     """
     components.html(print_btn, height=60)
+
+
+# --- LAYOUT PRINCIPALE (SENZA COLONNE PER HEADER PULITO) ---
+main_title = f"Report: {client_name}" if client_name else "Report Analitico GA4"
+st.title(main_title)
+
+# Header Dati
+comp_status = f"✅ Sì (vs {p_start_str} - {p_end_str})" if comp_active else "❌ No"
+header_html = f"""
+<div style="background-color: #F0F2F6; padding: 15px; border-radius: 10px; margin-bottom: 25px; border-left: 5px solid #D15627;">
+    <p style="margin:0; font-size: 14px; color:#2D3233;"><b>📅 Periodo:</b> {start_date.strftime('%d/%m/%Y')} - {end_date.strftime('%d/%m/%Y')}</p>
+    <p style="margin:0; font-size: 14px; color:#2D3233;"><b>🏪 Contesto:</b> {business_context if business_context else 'Non specificato'}</p>
+    <p style="margin:0; font-size: 14px; color:#2D3233;"><b>🔄 Confronto:</b> {comp_status}</p>
+</div>
+"""
+st.markdown(header_html, unsafe_allow_html=True)
 
 if st.session_state.report_data:
     data = st.session_state.report_data
