@@ -10,7 +10,7 @@ import streamlit.components.v1 as components
 import altair as alt 
 import json
 import re
-import time
+# time import rimosso perché con Pay-as-you-go non serve rallentare
 
 # --- 1. CONFIGURAZIONE PAGINA ---
 st.set_page_config(page_title="ADF Marketing Analyst", layout="wide", page_icon="📊")
@@ -46,29 +46,33 @@ st.markdown("""
     div.report-section h3 { color: #D15627 !important; border-bottom: 2px solid #D0E9F2; padding-bottom: 10px; }
     .stAlert { background-color: #E6F4F9; border-left: 5px solid #066C9C; color: #2D3233; }
 
-    /* --- STAMPA PROFESSIONALE (FIX COMPLETO) --- */
+    /* --- STAMPA PROFESSIONALE (FIX DEFINITIVO) --- */
     @media print {
-        /* Nascondi Sidebar, Header, Footer e Pulsanti */
+        /* 1. Nascondi Sidebar, Header, Footer e Pulsanti Streamlit */
         [data-testid="stSidebar"], .stButton, button, header, footer, #MainMenu, .stDeployButton, [data-testid="stToolbar"] {
             display: none !important;
         }
         
-        /* FIX: Nasconde l'iframe del pulsante */
-        iframe { display: none !important; height: 0 !important; }
+        /* 2. Nascondi COMPLETAMENTE l'iframe del pulsante e il suo contenitore */
+        iframe { display: none !important; height: 0 !important; width: 0 !important; border: none !important; }
+        .element-container:has(iframe) { display: none !important; }
 
-        /* FIX: Resetta le colonne per evitare il "buco" a destra */
+        /* 3. Resetta le colonne per evitare il "buco" a destra */
         [data-testid="stHorizontalBlock"] { display: block !important; }
-        [data-testid="column"] { width: 100% !important; display: block !important; margin-bottom: 10px !important; }
+        [data-testid="column"] { width: 100% !important; display: block !important; margin-bottom: 10px !important; flex: none !important; }
 
-        /* Layout A4 Pulito */
+        /* 4. Layout A4 Pulito */
         .stApp, .block-container {
             background-color: white !important; margin: 0 !important; padding: 0 !important; max-width: 100vw !important;
         }
 
-        /* Gestione Blocchi Report */
+        /* 5. Gestione Blocchi Report */
         .report-section {
             page-break-inside: avoid; border: 1px solid #ddd; padding: 20px; margin-bottom: 20px; break-inside: avoid;
         }
+        
+        /* 6. Forza apertura expander (fallback visivo) */
+        .streamlit-expanderContent { display: block !important; visibility: visible !important; height: auto !important; }
 
         body { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; font-size: 12pt !important; color: black !important; }
         canvas { max-width: 100% !important; height: auto !important; }
@@ -87,7 +91,7 @@ def configure_ai():
 
 ai_configured = configure_ai()
 
-# FUNZIONE AI (Modello Flash + Retry)
+# FUNZIONE AI (Gemini 1.5 Flash - Veloce per account paganti)
 def ask_gemini_advanced(df, report_name, kpi_curr, kpi_prev, comparison_active, business_context):
     if not ai_configured: return "⚠️ Chiave API AI mancante."
     
@@ -124,21 +128,13 @@ def ask_gemini_advanced(df, report_name, kpi_curr, kpi_prev, comparison_active, 
     3. 💡 **Azione Consigliata:** Una sola azione pratica e specifica da implementare subito.
     """
     
-    # RETRY LOGIC
-    for attempt in range(3):
-        try:
-            # USA GEMINI 1.5 FLASH: Più veloce ed economico
-            model = genai.GenerativeModel('gemini-1.5-flash')
-            response = model.generate_content(prompt)
-            return response.text
-        except Exception as e:
-            # Se errore di quota (429), aspetta
-            if "429" in str(e) or "quota" in str(e).lower():
-                time.sleep(3 + (attempt * 2))
-                continue
-            return f"⚠️ Analisi non disponibile al momento. (Err: {str(e)})"
-            
-    return "⚠️ Traffico AI intenso. Riprova tra un minuto."
+    # Nessun retry loop o sleep necessario con Pay-as-you-go, ma teniamo un try/except di base
+    try:
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        response = model.generate_content(prompt)
+        return response.text
+    except Exception as e:
+        return f"⚠️ Errore AI: {str(e)}"
 
 # --- 4. AUTH ---
 def get_ga4_client():
@@ -241,9 +237,7 @@ def generate_report(reports, pid, d1, d2, p1, p2, comp, context):
     res = {}
     bar = st.progress(0)
     for i, rep in enumerate(reports):
-        # DELAY per evitare limiti API (Se paghi Google Cloud, puoi rimuoverlo)
-        time.sleep(2.0) 
-        
+        # NO SLEEP: Hai il piano a pagamento, andiamo alla massima velocità!
         status, df, kpi = get_ga4_data(pid, d1, d2, p1, p2, rep, comp)
         if status == "OK" and not df.empty:
             if rep == "Panoramica Trend":
@@ -324,7 +318,7 @@ with col1:
 
 with col2:
     st.write("")
-    # Pulsante Stampa (Nascosto in PDF)
+    # Pulsante Stampa (Nascosto in PDF, fix per box grigi)
     print_btn = """
     <div style="display: flex; justify-content: flex-end;">
         <button onclick="window.parent.print()" style="
@@ -352,5 +346,9 @@ if st.session_state.report_data:
         
         st.info(f"🤖 **Analisi ADF:**\n\n{content['comm']}")
         render_chart_smart(content['df'], name)
-        with st.expander(f"Dati: {name}"): st.dataframe(content['df'], use_container_width=True, hide_index=True)
+        
+        # MODIFICA RICHIESTA: Espansore aperto di default (expanded=True)
+        with st.expander(f"Dati: {name}", expanded=True): 
+            st.dataframe(content['df'], use_container_width=True, hide_index=True)
+            
         st.markdown('</div>', unsafe_allow_html=True)
