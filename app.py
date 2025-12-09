@@ -10,6 +10,7 @@ import streamlit.components.v1 as components
 import altair as alt 
 import json
 import re
+import time  # Aggiunto per gestire i ritardi delle API
 
 # --- 1. CONFIGURAZIONE PAGINA ---
 st.set_page_config(page_title="ADF Marketing Analyst", layout="wide", page_icon="📊")
@@ -17,7 +18,7 @@ st.set_page_config(page_title="ADF Marketing Analyst", layout="wide", page_icon=
 if 'report_data' not in st.session_state:
     st.session_state.report_data = None
 
-# --- 2. DESIGN SYSTEM (PALETTE FIX & INPUT VISIBILI) ---
+# --- 2. DESIGN SYSTEM (PALETTE FIX & INPUT VISIBILI & PRINT CSS) ---
 st.markdown("""
 <style>
     /* Import Font */
@@ -101,7 +102,7 @@ st.markdown("""
         color: #2D3233;
     }
 
-    /* --- STAMPA --- */
+    /* --- STAMPA PROFESSIONALE (PDF FIX) --- */
     @media print {
         /* 1. Nascondi elementi inutili di Streamlit */
         [data-testid="stSidebar"], 
@@ -160,10 +161,12 @@ def configure_ai():
 
 ai_configured = configure_ai()
 
+# FUNZIONE AI POTENZIATA (Gestione Errori 429 + Retry)
 def ask_gemini_advanced(df, report_name, kpi_curr, kpi_prev, comparison_active, business_context):
     if not ai_configured: return "⚠️ Chiave API AI mancante."
     
-    data_preview = df.head(10).to_string(index=False)
+    # Prepara i dati
+    data_preview = df.head(15).to_string(index=False)
     context_str = f"Settore: '{business_context}'." if business_context else "Generico."
     
     if comparison_active:
@@ -173,37 +176,43 @@ def ask_gemini_advanced(df, report_name, kpi_curr, kpi_prev, comparison_active, 
             diff = v - prev
             perc = ((diff/prev)*100) if prev > 0 else 0
             kpi_text += f"- {k}: {v} (Var: {perc:.1f}%)\n"
-        task = "Analizza CRESCITA/CALO e cause."
+        task = "Analizza i cambiamenti (Crescita/Calo) e ipotizza le cause basandoti sui dati."
     else:
         kpi_text = ""
         for k, v in kpi_curr.items():
             kpi_text += f"- {k}: {v}\n"
-        task = "Analizza DISTRIBUZIONE e Top Performer."
+        task = "Analizza la distribuzione dei dati ed evidenzia i Top Performer."
 
     prompt = f"""
-    Sei un Analista Marketing (ADF Marketing). {context_str}
-    Report: {report_name}
-    KPI:
+    Agisci come Senior Marketing Analyst. {context_str}
+    Analisi Report: {report_name}
+    
+    KPI PRINCIPALI:
     {kpi_text}
-    DATI:
+    
+    DATI DETTAGLIATI (Primi 15 record):
     {data_preview}
     
-    1. {task}
-    2. Voto (1-10).
-    3. Azione Consigliata.
-    Sii sintetico.
+    Output richiesto (Sii diretto e professionale, usa formattazione Markdown):
+    1. 🔍 **Analisi {report_name}:** {task} Non elencare solo numeri, spiega il "perché".
+    2. 🎯 **Voto Performance (1-10):** Dai un voto secco basato sui KPI.
+    3. 💡 **Azione Consigliata:** Una sola azione pratica e specifica da implementare subito.
     """
     
-    try:
-        model = genai.GenerativeModel('gemini-2.5-flash-lite-preview-09-2025')
-        response = model.generate_content(prompt)
-        return response.text
-    except:
+    # RETRY LOGIC: Riprova fino a 3 volte se c'è errore 429
+    for attempt in range(3):
         try:
-            model = genai.GenerativeModel('gemini-3-pro-preview')
+            # Usa Flash che è più veloce ed economico
+            model = genai.GenerativeModel('gemini-1.5-flash')
             response = model.generate_content(prompt)
             return response.text
-        except Exception as e: return f"⚠️ AI Error: {e}"
+        except Exception as e:
+            if "429" in str(e) or "quota" in str(e).lower():
+                time.sleep(2 + (attempt * 2)) # Aspetta 2s, poi 4s, poi 6s
+                continue
+            return f"⚠️ Analisi non disponibile al momento. (Err: {str(e)})"
+            
+    return "⚠️ Traffico AI intenso. Riprova tra un minuto."
 
 # --- 4. AUTH ---
 def get_ga4_client():
@@ -224,7 +233,7 @@ def get_ga4_client():
         return None
     except: return None
 
-# --- 5. DATA ENGINE ---
+# --- 5. DATA ENGINE (Con Cache e Retry Parameter) ---
 @st.cache_data(ttl=3600, show_spinner=False)
 def get_ga4_data(prop_id, start, end, p_start, p_end, report_kind, comp_active, retry=False):
     client = get_ga4_client()
@@ -308,6 +317,9 @@ def generate_report(reports, pid, d1, d2, p1, p2, comp, context):
     res = {}
     bar = st.progress(0)
     for i, rep in enumerate(reports):
+        # RALLENTAMENTO INTENZIONALE PER EVITARE BLOCCO API GEMINI
+        time.sleep(1.5) 
+        
         status, df, kpi = get_ga4_data(pid, d1, d2, p1, p2, rep, comp)
         if status == "OK" and not df.empty:
             if rep == "Panoramica Trend":
@@ -373,8 +385,24 @@ with col1:
     st.caption(f"Analisi: {start_date.strftime('%d/%m/%Y')} - {end_date.strftime('%d/%m/%Y')}")
 with col2:
     st.write("")
-    components.html("""<script>function printPage() { window.print(); }</script>
-    <button onclick="printPage()" style="background-color:#D15627; color:white; border:none; padding:10px 20px; border-radius:5px; font-weight:bold; cursor:pointer; font-family:sans-serif;">🖨️ Stampa PDF</button>""", height=60)
+    # FIX STAMPA: Usa window.parent.print() per uscire dall'iframe di Streamlit
+    print_btn = """
+    <div style="display: flex; justify-content: flex-end;">
+        <button onclick="window.parent.print()" style="
+            background-color: #D15627; 
+            color: white; 
+            border: none; 
+            padding: 10px 20px; 
+            border-radius: 5px; 
+            font-weight: bold; 
+            cursor: pointer; 
+            font-family: sans-serif;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);">
+            🖨️ Stampa PDF
+        </button>
+    </div>
+    """
+    components.html(print_btn, height=60)
 
 if st.session_state.report_data:
     data = st.session_state.report_data
