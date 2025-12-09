@@ -176,14 +176,9 @@ def generate_report(reports, pid, d1, d2, p1, p2, comp, context):
 with st.sidebar:
     if os.path.exists("logo.png"): st.image("logo.png", width=80)
     st.markdown("### Configurazione")
-    
-    val_c = default_client if default_client else ""
-    val_i = default_id if default_id else st.session_state.get('last_prop_id', '')
-    val_x = default_context if default_context else ""
-
-    client_name = st.text_input("Cliente", value=val_c)
-    property_id = st.text_input("ID GA4", value=val_i)
-    business_context = st.text_area("Contesto", value=val_x, placeholder="Settore...", height=80)
+    client_name = st.text_input("Cliente", value=default_client, placeholder="Nome Cliente")
+    property_id = st.text_input("ID GA4", value=default_id if default_id else st.session_state.get('last_prop_id', ''))
+    business_context = st.text_area("Contesto", value=default_context, placeholder="Settore...", height=80)
     
     st.markdown("---")
     date_opt = st.selectbox("Periodo", ("Ultimi 28 Giorni", "Ultimi 90 Giorni", "Ultimo Anno", "Ultimi 2 Anni", "Personalizzato"))
@@ -194,12 +189,11 @@ with st.sidebar:
     elif date_opt == "Ultimi 2 Anni": start_date = today - datetime.timedelta(days=730)
     else: start_date = st.date_input("Dal", today - datetime.timedelta(days=30))
     end_date = st.date_input("Al", today) if date_opt == "Personalizzato" else today
-    
     comp_active = st.checkbox("Confronta periodo precedente", value=True)
+    
     if comp_active:
         delta = end_date - start_date; p_end = start_date - datetime.timedelta(days=1); p_start = p_end - delta
-        s_s, s_e = start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d")
-        p_s, p_e = p_start.strftime("%Y-%m-%d"), p_end.strftime("%Y-%m-%d")
+        s_s, s_e = start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d"); p_s, p_e = p_start.strftime("%Y-%m-%d"), p_end.strftime("%Y-%m-%d")
         vs_text = f"{p_start.strftime('%d/%m/%y')} - {p_end.strftime('%d/%m/%y')}"
     else: s_s, s_e = start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d"); p_s, p_e = s_s, s_e; vs_text = ""
 
@@ -243,7 +237,7 @@ with col1:
     st.title(main_title)
     st.caption(f"Analisi: {start_date.strftime('%d/%m/%Y')} - {end_date.strftime('%d/%m/%Y')}")
 with col2:
-    st.write(""); components.html("""<script>function printPage() { window.print(); }</script><button onclick="printPage()" style="background-color:#D15627; color:white; border:none; padding:10px 20px; border-radius:5px; font-weight:bold; cursor:pointer; font-family:sans-serif;">🖨️ Stampa PDF</button>""", height=60)
+    st.write(""); components.html("""<script>function printPage() { window.print(); }</script><button onclick="printPage()" style="background-color:#D15627; color:white; border:none; padding:10px 20px; border-radius:5px; font-weight:bold; cursor:pointer; font-family:sans-serif;">🖨️ Salva PDF</button>""", height=60)
 
 # --- AUTO RUN (LINK) ---
 if default_id and st.session_state.report_data is None:
