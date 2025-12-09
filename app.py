@@ -17,7 +17,7 @@ st.set_page_config(page_title="ADF Marketing Analyst", layout="wide", page_icon=
 if 'report_data' not in st.session_state:
     st.session_state.report_data = None
 
-# --- 2. DESIGN SYSTEM & CSS STAMPA AVANZATO ---
+# --- 2. CSS AVANZATO (STAMPA & UI) ---
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Lato:wght@400;700&family=Poppins:wght@600;700&display=swap');
@@ -45,19 +45,20 @@ st.markdown("""
     div.report-section h3 { color: #D15627 !important; border-bottom: 2px solid #D0E9F2; padding-bottom: 10px; }
     .stAlert { background-color: #E6F4F9; border-left: 5px solid #066C9C; color: #2D3233; }
 
-    /* --- CSS STAMPA "INVISIBLE BOX" --- */
+    /* --- REGOLE DI STAMPA PERFETTA --- */
     @media print {
-        /* 1. Nascondi tutto ciò che è interfaccia Streamlit */
+        /* Nascondi interfaccia Streamlit */
         [data-testid="stSidebar"], .stButton, button, header, footer, #MainMenu, .stDeployButton, [data-testid="stToolbar"] {
             display: none !important;
         }
         
-        /* 2. Nascondi il contenitore del pulsante HTML */
-        /* Questo nasconde qualsiasi blocco che contiene un iframe (il pulsante) */
-        .element-container:has(iframe) { display: none !important; height: 0 !important; margin: 0 !important; }
-        iframe { display: none !important; }
+        /* NASCONDI I BOX VUOTI (IFRAME PULSANTE) */
+        /* Questo nasconde qualsiasi elemento che contenga un iframe o sia vuoto */
+        iframe { display: none !important; height: 0 !important; width: 0 !important; }
+        .element-container:has(iframe) { display: none !important; margin: 0 !important; height: 0 !important; }
+        div[data-testid="stVerticalBlock"] > div:has(iframe) { display: none !important; }
 
-        /* 3. Resetta layout per A4 */
+        /* Resetta layout A4 */
         [data-testid="stHorizontalBlock"] { display: block !important; }
         [data-testid="column"] { width: 100% !important; display: block !important; margin: 0 !important; padding: 0 !important; flex: none !important; }
 
@@ -65,9 +66,9 @@ st.markdown("""
             background-color: white !important; margin: 0 !important; padding: 0 !important; max-width: 100vw !important;
         }
 
-        /* 4. Forza apertura expander */
+        /* FORZA APERTURA DETTAGLI */
         .streamlit-expanderContent { display: block !important; visibility: visible !important; height: auto !important; opacity: 1 !important; }
-        .streamlit-expanderHeader { display: none !important; } /* Nasconde la barra cliccabile dell'expander in stampa per pulizia */
+        .streamlit-expanderHeader { color: #066C9C !important; font-weight: bold !important; border-bottom: 1px solid #ccc; } 
 
         .report-section {
             page-break-inside: avoid; border: 1px solid #ddd; padding: 20px; margin-bottom: 20px; break-inside: avoid;
@@ -90,7 +91,7 @@ def configure_ai():
 
 ai_configured = configure_ai()
 
-# FUNZIONE AI (CON DIAGNOSTICA MODELLI)
+# FUNZIONE AI (FIX: USA IL NOME MODELLO COMPLETO TROVATO SUL SERVER)
 def ask_gemini_advanced(df, report_name, kpi_curr, kpi_prev, comparison_active, business_context):
     if not ai_configured: return "⚠️ Chiave API AI mancante."
     
@@ -128,21 +129,18 @@ def ask_gemini_advanced(df, report_name, kpi_curr, kpi_prev, comparison_active, 
     """
     
     try:
-        # Tentativo 1: Gemini 1.5 Flash (Il tuo obiettivo)
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        # FIX: Uso il nome ESATTO che abbiamo visto nel tuo screenshot
+        model = genai.GenerativeModel('models/gemini-1.5-flash')
         response = model.generate_content(prompt)
         return response.text
     except Exception as e_flash:
-        # FALLBACK & DIAGNOSTICA: Se fallisce, proviamo a capire perché
-        error_msg = str(e_flash)
-        if "404" in error_msg:
-            try:
-                # Proviamo a stampare i modelli disponibili per capire cosa vede il server
-                available_models = [m.name for m in genai.list_models()]
-                return f"⚠️ **Errore Modello 404.** La libreria Python non trova 'gemini-1.5-flash'.\n\n🛠 **Modelli rilevati sul server:** {available_models}.\n\n*Nota per sviluppatore: Se vedi solo modelli vecchi, forza l'aggiornamento di 'requirements.txt' e fai Reboot App.*"
-            except:
-                return f"⚠️ Errore critico AI: {error_msg}"
-        return f"⚠️ Errore AI: {error_msg}"
+        # Fallback estremo: se fallisce flash, prova il vecchio pro o stampa errore
+        try:
+            model_old = genai.GenerativeModel('models/gemini-pro')
+            response = model_old.generate_content(prompt)
+            return response.text
+        except Exception as e_final:
+             return f"⚠️ Errore AI: {str(e_flash)}"
 
 # --- 4. AUTH ---
 def get_ga4_client():
