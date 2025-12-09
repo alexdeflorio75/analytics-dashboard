@@ -10,7 +10,6 @@ import streamlit.components.v1 as components
 import altair as alt 
 import json
 import re
-# time import rimosso perché con Pay-as-you-go non serve rallentare
 
 # --- 1. CONFIGURAZIONE PAGINA ---
 st.set_page_config(page_title="ADF Marketing Analyst", layout="wide", page_icon="📊")
@@ -18,7 +17,7 @@ st.set_page_config(page_title="ADF Marketing Analyst", layout="wide", page_icon=
 if 'report_data' not in st.session_state:
     st.session_state.report_data = None
 
-# --- 2. DESIGN SYSTEM & CSS STAMPA ---
+# --- 2. DESIGN SYSTEM & CSS STAMPA AVANZATO ---
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Lato:wght@400;700&family=Poppins:wght@600;700&display=swap');
@@ -46,33 +45,33 @@ st.markdown("""
     div.report-section h3 { color: #D15627 !important; border-bottom: 2px solid #D0E9F2; padding-bottom: 10px; }
     .stAlert { background-color: #E6F4F9; border-left: 5px solid #066C9C; color: #2D3233; }
 
-    /* --- STAMPA PROFESSIONALE (FIX DEFINITIVO) --- */
+    /* --- CSS STAMPA "INVISIBLE BOX" --- */
     @media print {
-        /* 1. Nascondi Sidebar, Header, Footer e Pulsanti Streamlit */
+        /* 1. Nascondi tutto ciò che è interfaccia Streamlit */
         [data-testid="stSidebar"], .stButton, button, header, footer, #MainMenu, .stDeployButton, [data-testid="stToolbar"] {
             display: none !important;
         }
         
-        /* 2. Nascondi COMPLETAMENTE l'iframe del pulsante e il suo contenitore */
-        iframe { display: none !important; height: 0 !important; width: 0 !important; border: none !important; }
-        .element-container:has(iframe) { display: none !important; }
+        /* 2. Nascondi il contenitore del pulsante HTML */
+        /* Questo nasconde qualsiasi blocco che contiene un iframe (il pulsante) */
+        .element-container:has(iframe) { display: none !important; height: 0 !important; margin: 0 !important; }
+        iframe { display: none !important; }
 
-        /* 3. Resetta le colonne per evitare il "buco" a destra */
+        /* 3. Resetta layout per A4 */
         [data-testid="stHorizontalBlock"] { display: block !important; }
-        [data-testid="column"] { width: 100% !important; display: block !important; margin-bottom: 10px !important; flex: none !important; }
+        [data-testid="column"] { width: 100% !important; display: block !important; margin: 0 !important; padding: 0 !important; flex: none !important; }
 
-        /* 4. Layout A4 Pulito */
         .stApp, .block-container {
             background-color: white !important; margin: 0 !important; padding: 0 !important; max-width: 100vw !important;
         }
 
-        /* 5. Gestione Blocchi Report */
+        /* 4. Forza apertura expander */
+        .streamlit-expanderContent { display: block !important; visibility: visible !important; height: auto !important; opacity: 1 !important; }
+        .streamlit-expanderHeader { display: none !important; } /* Nasconde la barra cliccabile dell'expander in stampa per pulizia */
+
         .report-section {
             page-break-inside: avoid; border: 1px solid #ddd; padding: 20px; margin-bottom: 20px; break-inside: avoid;
         }
-        
-        /* 6. Forza apertura expander (fallback visivo) */
-        .streamlit-expanderContent { display: block !important; visibility: visible !important; height: auto !important; }
 
         body { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; font-size: 12pt !important; color: black !important; }
         canvas { max-width: 100% !important; height: auto !important; }
@@ -91,7 +90,7 @@ def configure_ai():
 
 ai_configured = configure_ai()
 
-# FUNZIONE AI (Gemini 1.5 Flash - Veloce per account paganti)
+# FUNZIONE AI (CON DIAGNOSTICA MODELLI)
 def ask_gemini_advanced(df, report_name, kpi_curr, kpi_prev, comparison_active, business_context):
     if not ai_configured: return "⚠️ Chiave API AI mancante."
     
@@ -128,13 +127,22 @@ def ask_gemini_advanced(df, report_name, kpi_curr, kpi_prev, comparison_active, 
     3. 💡 **Azione Consigliata:** Una sola azione pratica e specifica da implementare subito.
     """
     
-    # Nessun retry loop o sleep necessario con Pay-as-you-go, ma teniamo un try/except di base
     try:
+        # Tentativo 1: Gemini 1.5 Flash (Il tuo obiettivo)
         model = genai.GenerativeModel('gemini-1.5-flash')
         response = model.generate_content(prompt)
         return response.text
-    except Exception as e:
-        return f"⚠️ Errore AI: {str(e)}"
+    except Exception as e_flash:
+        # FALLBACK & DIAGNOSTICA: Se fallisce, proviamo a capire perché
+        error_msg = str(e_flash)
+        if "404" in error_msg:
+            try:
+                # Proviamo a stampare i modelli disponibili per capire cosa vede il server
+                available_models = [m.name for m in genai.list_models()]
+                return f"⚠️ **Errore Modello 404.** La libreria Python non trova 'gemini-1.5-flash'.\n\n🛠 **Modelli rilevati sul server:** {available_models}.\n\n*Nota per sviluppatore: Se vedi solo modelli vecchi, forza l'aggiornamento di 'requirements.txt' e fai Reboot App.*"
+            except:
+                return f"⚠️ Errore critico AI: {error_msg}"
+        return f"⚠️ Errore AI: {error_msg}"
 
 # --- 4. AUTH ---
 def get_ga4_client():
@@ -237,7 +245,6 @@ def generate_report(reports, pid, d1, d2, p1, p2, comp, context):
     res = {}
     bar = st.progress(0)
     for i, rep in enumerate(reports):
-        # NO SLEEP: Hai il piano a pagamento, andiamo alla massima velocità!
         status, df, kpi = get_ga4_data(pid, d1, d2, p1, p2, rep, comp)
         if status == "OK" and not df.empty:
             if rep == "Panoramica Trend":
@@ -305,7 +312,6 @@ with col1:
     main_title = f"Report: {client_name}" if client_name else "Report Analitico GA4"
     st.title(main_title)
     
-    # Intestazione Report (Dati Cliente)
     comp_status = f"✅ Sì (vs {p_start_str} - {p_end_str})" if comp_active else "❌ No"
     header_html = f"""
     <div style="background-color: #F0F2F6; padding: 15px; border-radius: 10px; margin-bottom: 25px; border-left: 5px solid #D15627;">
@@ -318,7 +324,7 @@ with col1:
 
 with col2:
     st.write("")
-    # Pulsante Stampa (Nascosto in PDF, fix per box grigi)
+    # Pulsante Stampa
     print_btn = """
     <div style="display: flex; justify-content: flex-end;">
         <button onclick="window.parent.print()" style="
@@ -347,7 +353,7 @@ if st.session_state.report_data:
         st.info(f"🤖 **Analisi ADF:**\n\n{content['comm']}")
         render_chart_smart(content['df'], name)
         
-        # MODIFICA RICHIESTA: Espansore aperto di default (expanded=True)
+        # Espansore aperto di default (expanded=True)
         with st.expander(f"Dati: {name}", expanded=True): 
             st.dataframe(content['df'], use_container_width=True, hide_index=True)
             
