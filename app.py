@@ -17,7 +17,7 @@ st.set_page_config(page_title="ADF Marketing Analyst", layout="wide", page_icon=
 if 'report_data' not in st.session_state:
     st.session_state.report_data = None
 
-# --- 2. CSS STAMPA & UI (Layout Pulito) ---
+# --- 2. DESIGN SYSTEM & CSS STAMPA ---
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Lato:wght@400;700&family=Poppins:wght@600;700&display=swap');
@@ -45,29 +45,28 @@ st.markdown("""
     div.report-section h3 { color: #D15627 !important; border-bottom: 2px solid #D0E9F2; padding-bottom: 10px; }
     .stAlert { background-color: #E6F4F9; border-left: 5px solid #066C9C; color: #2D3233; }
 
-    /* --- REGOLE DI STAMPA PERFETTA (PDF) --- */
+    /* --- STAMPA PDF PULITA (NO BOX GRIGI) --- */
     @media print {
         /* Nascondi Sidebar, Header, Footer e UI Streamlit */
         [data-testid="stSidebar"], .stButton, button, header, footer, #MainMenu, .stDeployButton, [data-testid="stToolbar"] {
             display: none !important;
         }
         
+        /* Nascondi iframe pulsante */
+        iframe { display: none !important; }
+
         /* Resetta layout per A4 */
         .stApp, .block-container {
             background-color: white !important; margin: 0 !important; padding: 0 !important; max-width: 100vw !important;
         }
 
-        /* Forza apertura expander (Dettagli) */
+        /* Forza apertura expander (Dettagli sempre visibili) */
         .streamlit-expanderContent { display: block !important; visibility: visible !important; height: auto !important; opacity: 1 !important; }
         .streamlit-expanderHeader { color: #066C9C !important; font-weight: bold !important; border-bottom: 1px solid #ccc; } 
 
-        /* Gestione interruzioni pagina */
         .report-section {
             page-break-inside: avoid; border: 1px solid #ddd; padding: 20px; margin-bottom: 20px; break-inside: avoid;
         }
-        
-        /* FIX DEFINITIVO BOX GRIGI: Nascondi iframe pulsante se rimasti */
-        iframe { display: none !important; }
 
         body { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; font-size: 12pt !important; color: black !important; }
         canvas { max-width: 100% !important; height: auto !important; }
@@ -86,10 +85,11 @@ def configure_ai():
 
 ai_configured = configure_ai()
 
+# FUNZIONE AI RIPRISTINATA (CON MODELLO SICURO)
 def ask_gemini_advanced(df, report_name, kpi_curr, kpi_prev, comparison_active, business_context):
     if not ai_configured: return "⚠️ Chiave API AI mancante."
     
-    data_preview = df.head(15).to_string(index=False)
+    data_preview = df.head(10).to_string(index=False)
     context_str = f"Settore: '{business_context}'." if business_context else "Generico."
     
     if comparison_active:
@@ -99,36 +99,35 @@ def ask_gemini_advanced(df, report_name, kpi_curr, kpi_prev, comparison_active, 
             diff = v - prev
             perc = ((diff/prev)*100) if prev > 0 else 0
             kpi_text += f"- {k}: {v} (Var: {perc:.1f}%)\n"
-        task = "Analizza i cambiamenti (Crescita/Calo) e ipotizza le cause basandoti sui dati."
+        task = "Analizza CRESCITA/CALO e cause."
     else:
         kpi_text = ""
         for k, v in kpi_curr.items():
             kpi_text += f"- {k}: {v}\n"
-        task = "Analizza la distribuzione dei dati ed evidenzia i Top Performer."
+        task = "Analizza DISTRIBUZIONE e Top Performer."
 
     prompt = f"""
-    Agisci come Senior Marketing Analyst. {context_str}
-    Analisi Report: {report_name}
-    
-    KPI PRINCIPALI:
+    Sei un Analista Marketing (ADF Marketing). {context_str}
+    Report: {report_name}
+    KPI:
     {kpi_text}
-    
-    DATI DETTAGLIATI (Primi 15 record):
+    DATI:
     {data_preview}
     
-    Output richiesto (Sii diretto e professionale, usa formattazione Markdown):
-    1. 🔍 **Analisi {report_name}:** {task} Non elencare solo numeri, spiega il "perché".
-    2. 🎯 **Voto Performance (1-10):** Dai un voto secco basato sui KPI.
-    3. 💡 **Azione Consigliata:** Una sola azione pratica e specifica da implementare subito.
+    1. {task}
+    2. Voto (1-10).
+    3. Azione Consigliata.
+    Sii sintetico.
     """
     
     try:
-        # Usa ESPLICITAMENTE il nome modello che abbiamo visto funzionare nei log
-        model = genai.GenerativeModel('models/gemini-1.5-flash')
+        # RIPRISTINO: Usiamo 'gemini-pro' che è presente nella tua lista modelli del server.
+        # Evitiamo i modelli 'preview' o 'flash' che stanno dando errore 404.
+        model = genai.GenerativeModel('gemini-pro')
         response = model.generate_content(prompt)
         return response.text
     except Exception as e:
-        return f"⚠️ Errore AI ({genai.__version__}): {str(e)}"
+        return f"⚠️ Errore AI: {str(e)}"
 
 # --- 4. AUTH ---
 def get_ga4_client():
@@ -151,7 +150,7 @@ def get_ga4_client():
 
 # --- 5. DATA ENGINE ---
 @st.cache_data(ttl=3600, show_spinner=False)
-def get_ga4_data(prop_id, start, end, p_start, p_end, report_kind, comp_active, retry=False):
+def get_ga4_data(prop_id, start, end, p_start, p_end, report_kind, comp_active):
     client = get_ga4_client()
     if not client: return "AUTH_ERROR", None, None
 
@@ -205,6 +204,7 @@ def render_chart_smart(df, report_kind):
     cols = [c for c in df.columns if c not in ['Dimensione', 'Data', 'date_obj']]
     if not cols: return
     main = cols[0]
+    
     color_scale = alt.Scale(range=["#066C9C", "#D15627", "#54A1BF", "#2D3233"])
     
     if "Dispositivi" in report_kind or "Fidelizzazione" in report_kind:
@@ -293,7 +293,7 @@ with st.sidebar:
         if not property_id: st.error("Manca ID")
         else: st.session_state.report_data = generate_report(target, property_id, start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d"), p_start.strftime("%Y-%m-%d"), p_end.strftime("%Y-%m-%d"), comp_active, business_context)
 
-    # --- NUOVO POSIZIONAMENTO TASTO STAMPA (SIDEBAR) ---
+    # --- TASTO STAMPA SPOSTATO IN SIDEBAR PER EVITARE BOX GRIGI ---
     st.write("")
     st.divider()
     print_btn = """
@@ -305,16 +305,11 @@ with st.sidebar:
     </div>
     """
     components.html(print_btn, height=60)
-    
-    # DEBUG VERSION (Per capire se ha aggiornato)
-    st.caption(f"v.AI: {genai.__version__}")
 
-
-# --- LAYOUT PRINCIPALE (SENZA COLONNE PER HEADER PULITO) ---
+# --- LAYOUT PRINCIPALE PULITO (NO COLONNE) ---
 main_title = f"Report: {client_name}" if client_name else "Report Analitico GA4"
 st.title(main_title)
 
-# Header Dati
 comp_status = f"✅ Sì (vs {p_start_str} - {p_end_str})" if comp_active else "❌ No"
 header_html = f"""
 <div style="background-color: #F0F2F6; padding: 15px; border-radius: 10px; margin-bottom: 25px; border-left: 5px solid #D15627;">
@@ -343,7 +338,7 @@ if st.session_state.report_data:
         st.info(f"🤖 **Analisi ADF:**\n\n{content['comm']}")
         render_chart_smart(content['df'], name)
         
-        # Espansore aperto di default (expanded=True)
+        # Espansore aperto di default
         with st.expander(f"Dati: {name}", expanded=True): 
             st.dataframe(content['df'], use_container_width=True, hide_index=True)
             
