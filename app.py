@@ -17,11 +17,12 @@ st.set_page_config(page_title="ADF Marketing Analyst", layout="wide", page_icon=
 if 'report_data' not in st.session_state:
     st.session_state.report_data = None
 
-# --- 2. DESIGN SYSTEM & CSS STAMPA ---
+# --- 2. DESIGN SYSTEM & CSS STAMPA FIX ---
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Lato:wght@400;700&family=Poppins:wght@600;700&display=swap');
 
+    /* GLOBAL STYLES */
     .stApp { background-color: #F9F9F9; }
     html, body, p, div, label, .stMarkdown { font-family: 'Lato', sans-serif !important; color: #2D3233 !important; }
     h1, h2, h3, h4 { font-family: 'Poppins', sans-serif !important; color: #0D0D0D !important; }
@@ -35,32 +36,33 @@ st.markdown("""
 
     /* PULSANTI */
     div.stButton > button:first-child {
-        background-color: #D15627 !important; color: #FFFFFF !important; border: none; border-radius: 8px; padding: 0.6rem 1.2rem; font-weight: 600;
+        background-color: #D15627 !important; color: #FFFFFF !important; border: none; border-radius: 8px; padding: 0.6rem 1.2rem; font-family: 'Poppins', sans-serif; font-weight: 600;
     }
     div.stButton > button:first-child:hover { background-color: #B3441F !important; color: #FFFFFF !important; }
 
-    /* KPI & TITOLI */
+    /* KPI */
     [data-testid="stMetricValue"] { color: #066C9C !important; font-family: 'Poppins', sans-serif; }
     [data-testid="stMetricLabel"] { color: #54A1BF !important; }
     div.report-section h3 { color: #D15627 !important; border-bottom: 2px solid #D0E9F2; padding-bottom: 10px; }
     .stAlert { background-color: #E6F4F9; border-left: 5px solid #066C9C; color: #2D3233; }
 
-    /* --- STAMPA PDF PULITA (NO BOX GRIGI) --- */
+    /* --- STAMPA PROFESSIONALE (FIX BOX GRIGI) --- */
     @media print {
-        /* Nascondi Sidebar, Header, Footer e UI Streamlit */
+        /* Nascondi Sidebar e UI Streamlit */
         [data-testid="stSidebar"], .stButton, button, header, footer, #MainMenu, .stDeployButton, [data-testid="stToolbar"] {
             display: none !important;
         }
         
-        /* Nascondi iframe pulsante */
+        /* FIX CRITICO: Nasconde l'iframe del pulsante per evitare il box grigio vuoto */
         iframe { display: none !important; }
+        .element-container:has(iframe) { display: none !important; }
 
-        /* Resetta layout per A4 */
+        /* Resetta layout A4 */
         .stApp, .block-container {
             background-color: white !important; margin: 0 !important; padding: 0 !important; max-width: 100vw !important;
         }
 
-        /* Forza apertura expander (Dettagli sempre visibili) */
+        /* Forza i dettagli aperti */
         .streamlit-expanderContent { display: block !important; visibility: visible !important; height: auto !important; opacity: 1 !important; }
         .streamlit-expanderHeader { color: #066C9C !important; font-weight: bold !important; border-bottom: 1px solid #ccc; } 
 
@@ -85,7 +87,6 @@ def configure_ai():
 
 ai_configured = configure_ai()
 
-# FUNZIONE AI RIPRISTINATA (CON MODELLO SICURO)
 def ask_gemini_advanced(df, report_name, kpi_curr, kpi_prev, comparison_active, business_context):
     if not ai_configured: return "⚠️ Chiave API AI mancante."
     
@@ -121,8 +122,7 @@ def ask_gemini_advanced(df, report_name, kpi_curr, kpi_prev, comparison_active, 
     """
     
     try:
-        # RIPRISTINO: Usiamo 'gemini-pro' che è presente nella tua lista modelli del server.
-        # Evitiamo i modelli 'preview' o 'flash' che stanno dando errore 404.
+        # FIX: Usa 'gemini-pro'. È il modello universale che funziona sempre.
         model = genai.GenerativeModel('gemini-pro')
         response = model.generate_content(prompt)
         return response.text
@@ -149,7 +149,6 @@ def get_ga4_client():
     except: return None
 
 # --- 5. DATA ENGINE ---
-@st.cache_data(ttl=3600, show_spinner=False)
 def get_ga4_data(prop_id, start, end, p_start, p_end, report_kind, comp_active):
     client = get_ga4_client()
     if not client: return "AUTH_ERROR", None, None
@@ -205,6 +204,7 @@ def render_chart_smart(df, report_kind):
     if not cols: return
     main = cols[0]
     
+    # Palette colori personalizzata (Blu Key, Arancio Key, etc)
     color_scale = alt.Scale(range=["#066C9C", "#D15627", "#54A1BF", "#2D3233"])
     
     if "Dispositivi" in report_kind or "Fidelizzazione" in report_kind:
@@ -270,12 +270,8 @@ with st.sidebar:
         delta = end_date - start_date
         p_end = start_date - datetime.timedelta(days=1)
         p_start = p_end - delta
-        p_start_str = p_start.strftime('%d/%m/%y')
-        p_end_str = p_end.strftime('%d/%m/%y')
-        st.caption(f"Vs: {p_start_str} - {p_end_str}")
-    else: 
-        p_start, p_end = start_date, end_date 
-        p_start_str, p_end_str = "-", "-"
+        st.caption(f"Vs: {p_start.strftime('%d/%m/%y')} - {p_end.strftime('%d/%m/%y')}")
+    else: p_start, p_end = start_date, end_date # Dummy
 
     st.divider()
     grp = {
@@ -293,7 +289,7 @@ with st.sidebar:
         if not property_id: st.error("Manca ID")
         else: st.session_state.report_data = generate_report(target, property_id, start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d"), p_start.strftime("%Y-%m-%d"), p_end.strftime("%Y-%m-%d"), comp_active, business_context)
 
-    # --- TASTO STAMPA SPOSTATO IN SIDEBAR PER EVITARE BOX GRIGI ---
+    # Tasto Stampa in Sidebar (più sicuro per il layout)
     st.write("")
     st.divider()
     print_btn = """
@@ -306,19 +302,10 @@ with st.sidebar:
     """
     components.html(print_btn, height=60)
 
-# --- LAYOUT PRINCIPALE PULITO (NO COLONNE) ---
+# --- LAYOUT PRINCIPALE (PULITO: NO COLONNE HEADER) ---
 main_title = f"Report: {client_name}" if client_name else "Report Analitico GA4"
 st.title(main_title)
-
-comp_status = f"✅ Sì (vs {p_start_str} - {p_end_str})" if comp_active else "❌ No"
-header_html = f"""
-<div style="background-color: #F0F2F6; padding: 15px; border-radius: 10px; margin-bottom: 25px; border-left: 5px solid #D15627;">
-    <p style="margin:0; font-size: 14px; color:#2D3233;"><b>📅 Periodo:</b> {start_date.strftime('%d/%m/%Y')} - {end_date.strftime('%d/%m/%Y')}</p>
-    <p style="margin:0; font-size: 14px; color:#2D3233;"><b>🏪 Contesto:</b> {business_context if business_context else 'Non specificato'}</p>
-    <p style="margin:0; font-size: 14px; color:#2D3233;"><b>🔄 Confronto:</b> {comp_status}</p>
-</div>
-"""
-st.markdown(header_html, unsafe_allow_html=True)
+st.caption(f"Analisi: {start_date.strftime('%d/%m/%Y')} - {end_date.strftime('%d/%m/%Y')}")
 
 if st.session_state.report_data:
     data = st.session_state.report_data
@@ -338,8 +325,8 @@ if st.session_state.report_data:
         st.info(f"🤖 **Analisi ADF:**\n\n{content['comm']}")
         render_chart_smart(content['df'], name)
         
-        # Espansore aperto di default
+        # MODIFICA: expanded=True per avere i dati aperti di default in stampa
         with st.expander(f"Dati: {name}", expanded=True): 
             st.dataframe(content['df'], use_container_width=True, hide_index=True)
-            
+        
         st.markdown('</div>', unsafe_allow_html=True)
