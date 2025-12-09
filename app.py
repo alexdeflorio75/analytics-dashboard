@@ -55,33 +55,48 @@ st.markdown("""
 
     /* --- REGOLE DI STAMPA PDF --- */
     @media print {
-        /* Nascondi Sidebar, Header, Footer e Pulsanti */
-        [data-testid="stSidebar"], header, footer, .stButton, .stDeployButton { display: none !important; }
-        
-        /* Resetta i margini del contenuto principale */
-        .block-container {
-            padding: 0 !important;
+        /* 1. Nascondi elementi inutili di Streamlit */
+        [data-testid="stSidebar"], 
+        .stButton, 
+        button, 
+        header, 
+        footer, 
+        #MainMenu, 
+        .stDeployButton,
+        [data-testid="stToolbar"] {
+            display: none !important;
+        }
+
+        /* 2. Reset Layout per foglio A4 bianco */
+        .stApp, .block-container {
+            background-color: white !important;
             margin: 0 !important;
-            max-width: 100% !important;
-            background: white !important;
-            overflow: visible !important;
+            padding: 0 !important;
+            max-width: 100vw !important;
         }
-        
-        /* Forza la visualizzazione dei grafici */
-        canvas, .stVegaLiteChart {
+
+        /* 3. Gestione intelligente dei blocchi report */
+        .report-section {
+            page-break-inside: avoid; /* Evita di tagliare a metà i grafici */
+            border: 1px solid #ddd;
+            padding: 20px;
+            margin-bottom: 20px;
             break-inside: avoid;
-            visibility: visible !important;
+        }
+
+        /* 4. Ottimizzazione Colori per risparmio inchiostro ma alta leggibilità */
+        body {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+            font-size: 12pt !important;
+            color: black !important;
         }
         
-        /* Interruzioni di pagina intelligenti */
-        .report-section { 
-            page-break-inside: avoid; 
-            margin-bottom: 40px; 
-            border-bottom: 1px solid #ddd;
+        /* 5. Fix Dimensioni Grafici */
+        canvas {
+            max-width: 100% !important;
+            height: auto !important;
         }
-        
-        /* Mostra Header di Stampa */
-        #print-header { display: block !important; margin-bottom: 20px; border-bottom: 2px solid #D15627; }
     }
     #print-header { display: none; }
 </style>
@@ -123,6 +138,7 @@ def ask_gemini_advanced(df, report_name, kpi_curr, kpi_prev, comp, context):
         return "⚠️ Analisi AI non disponibile al momento."
 
 # --- 5. DATI ---
+@st.cache_data(ttl=3600, show_spinner=False)
 def get_ga4_data(prop_id, start, end, p_start, p_end, report_kind, comp_active, retry=False):
     client = get_ga4_client()
     if not client: return "AUTH_ERROR", None, None
@@ -291,3 +307,4 @@ if st.session_state.get('report_data'):
 
 elif not st.session_state.get('last_prop_id'):
     st.info("👈 Configura il cliente nella barra laterale.")
+
