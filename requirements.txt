@@ -1,6 +1,6 @@
 streamlit
 pandas
 google-analytics-data
-google-generativeai
+google-generativeai>=0.5.2
 altair
 google-auth
