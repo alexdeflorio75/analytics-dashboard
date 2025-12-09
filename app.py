@@ -13,20 +13,16 @@ import re
 import urllib.parse
 import base64
 
-# --- 1. CONFIGURAZIONE PAGINA & INIT ---
+# --- 1. CONFIGURAZIONE PAGINA ---
 st.set_page_config(page_title="ADF Marketing Analyst", layout="wide", page_icon="📊")
 
-# Inizializzazione Sessione
-if 'report_data' not in st.session_state: st.session_state.report_data = None
-if 'first_load' not in st.session_state: st.session_state.first_load = True
+query_params = st.query_params
+default_id = query_params.get("id", "")
+default_client = query_params.get("client", "")
+default_context = query_params.get("context", "")
 
-# Funzione Logo
-def get_base64_logo():
-    if os.path.exists("logo.png"):
-        with open("logo.png", "rb") as f: data = f.read()
-        return base64.b64encode(data).decode()
-    return ""
-logo_b64 = get_base64_logo()
+if 'report_data' not in st.session_state:
+    st.session_state.report_data = None
 
 # --- 2. CSS STAMPA & DESIGN ---
 st.markdown("""
@@ -36,38 +32,30 @@ st.markdown("""
     html, body, p, div, label, .stMarkdown, .stRadio label { font-family: 'Lato', sans-serif !important; color: #2D3233 !important; }
     h1, h2, h3, h4 { font-family: 'Poppins', sans-serif !important; color: #0D0D0D !important; }
     
-    /* INPUT & SIDEBAR */
     .stTextInput input, .stTextArea textarea, .stSelectbox div[data-baseweb="select"] > div {
-        background-color: #FFFFFF !important; border: 1px solid #066C9C !important; border-radius: 4px; font-size: 14px;
+        background-color: #FFFFFF !important; border: 1px solid #066C9C !important; border-radius: 6px !important; color: #000000 !important; font-size: 15px;
     }
+    
     [data-testid="stSidebar"] .block-container { padding-top: 2rem; padding-left: 1.5rem; padding-right: 1.5rem; }
-    .stTextInput, .stSelectbox, .stTextArea, .stCheckbox { margin-bottom: 15px !important; }
-
-    /* PULSANTE */
     div.stButton > button:first-child {
-        background-color: #D15627 !important; color: #FFFFFF !important; border: 1px solid #B3441F !important;
-        font-weight: 700; width: 100%; margin-top: 15px; font-size: 16px;
+        background-color: #D15627 !important; color: #FFFFFF !important; border: 1px solid #B3441F !important; font-weight: 700; padding: 0.75rem 1.5rem; width: 100%; margin-top: 15px; font-size: 16px;
     }
     div.stButton > button:first-child:hover { background-color: #A33B1B !important; }
-
-    /* REPORT */
+    
     div.report-section h3 { color: #D15627 !important; border-bottom: 3px solid #D0E9F2; padding-bottom: 8px; margin-top: 30px; }
     [data-testid="stMetricValue"] { color: #066C9C !important; font-weight: 700; }
-
-    /* STAMPA PULITA */
+    
     @media print {
         [data-testid="stSidebar"] {display: none !important;} 
         .stButton {display: none !important;} 
         header {visibility: hidden !important;} 
-        .block-container {background-color: white !important; padding: 0 !important; margin: 0 !important;} 
+        .block-container {background-color: white !important; padding:0!important; margin:0!important;} 
         .report-section { page-break-inside: avoid; margin-bottom: 40px; }
-        #print-header { display: block !important; margin-bottom: 30px; border-bottom: 2px solid #D15627; }
     }
-    #print-header { display: none; }
 </style>
 """, unsafe_allow_html=True)
 
-# --- 3. AI (Gemini 3 Pro) ---
+# --- 3. AI ---
 def configure_ai():
     try:
         if "GOOGLE_API_KEY" in st.secrets:
@@ -79,12 +67,10 @@ def configure_ai():
 ai_configured = configure_ai()
 
 def ask_gemini_advanced(df, report_name, kpi_curr, kpi_prev, comparison_active, business_context):
-    if not ai_configured: return "⚠️ Chiave API AI mancante o errata."
-    
+    if not ai_configured: return "⚠️ Chiave API AI mancante."
     data_preview = df.head(10).to_string(index=False)
     context_str = f"Settore: '{business_context}'." if business_context else ""
     
-    # Logica Prompt
     if comparison_active:
         kpi_text = ""
         for k, v in kpi_curr.items():
@@ -92,39 +78,59 @@ def ask_gemini_advanced(df, report_name, kpi_curr, kpi_prev, comparison_active, 
             diff = v - prev
             perc = ((diff/prev)*100) if prev > 0 else 0
             kpi_text += f"- {k}: {v} (Var: {perc:.1f}%)\n"
-        task = "Analizza Trend/Variazioni e possibili cause."
+        task = "Analizza Trend e cause."
     else:
         kpi_text = ""
         for k, v in kpi_curr.items(): kpi_text += f"- {k}: {v}\n"
-        task = "Analizza volumi attuali e top performer."
+        task = "Analizza volumi attuali."
 
-    prompt = f"""Sei un Senior Analyst (ADF Marketing). {context_str} Report: {report_name} KPI: {kpi_text} DATI: {data_preview} 1. {task} 2. Voto (1-10). 3. Consiglio Operativo. Sintetico. No saluti."""
+    prompt = f"""Sei un Senior Analyst (ADF Marketing). {context_str} Report: {report_name} KPI: {kpi_text} DATI: {data_preview} 1. {task} 2. Voto (1-10). 3. Consiglio. Sintetico. No saluti."""
     
     try:
-        # Usiamo Gemini 3 Pro (Testato da te)
         model = genai.GenerativeModel('gemini-3-pro-preview')
         return model.generate_content(prompt).text
     except Exception as e:
         return f"⚠️ Errore AI: {str(e)}"
 
-# --- 4. AUTH & DATA ENGINE ---
+# --- 4. AUTH & DATA (DEBUG MODE) ---
 def get_ga4_client():
-    try:
-        if "GOOGLE_CREDENTIALS" in st.secrets:
+    # 1. Prova da Secrets (Cloud)
+    if "GOOGLE_CREDENTIALS" in st.secrets:
+        try:
             creds_str = st.secrets["GOOGLE_CREDENTIALS"]
-            # Pulizia e Parsing
-            clean_str = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', creds_str)
-            clean_str = clean_str.replace('PRIVATE KEY-----', 'PRIVATE KEY-----\\n')
-            if not clean_str.startswith('{'): clean_str = creds_str.replace('\n', ' ')
-            creds_dict = json.loads(clean_str, strict=False)
+            # Tenta parsing standard
+            creds_dict = json.loads(creds_str, strict=False)
             return BetaAnalyticsDataClient(credentials=service_account.Credentials.from_service_account_info(creds_dict))
-        elif os.path.exists('credentials.json'):
-            os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = 'credentials.json'
-            return BetaAnalyticsDataClient()
-        return None
-    except: return None
+        except json.JSONDecodeError as e:
+            # Se fallisce, proviamo a pulire eventuali caratteri invisibili
+            try:
+                # Rimuove caratteri di controllo ma mantiene struttura
+                clean_str = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', creds_str)
+                # Ripristina header chiave privata se danneggiato
+                clean_str = clean_str.replace('PRIVATE KEY-----', 'PRIVATE KEY-----\\n')
+                # Se sembra ancora rotto (es. tutto su una riga senza graffe iniziali)
+                if not clean_str.strip().startswith('{'):
+                     clean_str = creds_str.replace('\n', ' ')
+                
+                creds_dict = json.loads(clean_str, strict=False)
+                return BetaAnalyticsDataClient(credentials=service_account.Credentials.from_service_account_info(creds_dict))
+            except Exception as e2:
+                st.error(f"❌ Errore Decodifica JSON Credenziali: {e2}")
+                return None
+        except Exception as e:
+            st.error(f"❌ Errore Generico Auth Cloud: {e}")
+            return None
 
-def get_ga4_data(prop_id, start, end, p_start, p_end, report_kind, comp_active, retry=False):
+    # 2. Prova da File (Locale)
+    elif os.path.exists('credentials.json'):
+        os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = 'credentials.json'
+        return BetaAnalyticsDataClient()
+    
+    else:
+        st.error("❌ Nessuna credenziale trovata (Manca GOOGLE_CREDENTIALS nei secrets o file locale).")
+        return None
+
+def get_ga4_data(prop_id, start, end, p_start, p_end, report_kind, comp_active, retry_mode=False):
     client = get_ga4_client()
     if not client: return "AUTH_ERROR", None, None
 
@@ -132,18 +138,16 @@ def get_ga4_data(prop_id, start, end, p_start, p_end, report_kind, comp_active, 
     dims = [Dimension(name="date")]
     mets = [Metric(name="activeUsers"), Metric(name="sessions"), Metric(name="conversions")]
 
-    # MAPPA REPORT COMPLETA
-    if "Acquisizione" in report_kind: dims = [Dimension(name="sessionSourceMedium")]
-    elif "Campagne" in report_kind: dims = [Dimension(name="campaignName")]; mets = [Metric(name="sessions"), Metric(name="conversions")]
-    elif "Eventi" in report_kind: dims = [Dimension(name="eventName")]; mets = [Metric(name="eventCount"), Metric(name="totalUsers")]
-    elif "Pagine" in report_kind: dims = [Dimension(name="pageTitle")]; mets = [Metric(name="screenPageViews"), Metric(name="activeUsers")]
-    elif "Landing" in report_kind: dims = [Dimension(name="landingPage")]; mets = [Metric(name="sessions"), Metric(name="conversions")]
-    elif "Fidelizzazione" in report_kind: dims = [Dimension(name="newVsReturning")]
-    elif "Città" in report_kind: dims = [Dimension(name="city")]
-    elif "Paese" in report_kind: dims = [Dimension(name="country")]
-    elif "Dispositivi" in report_kind: dims = [Dimension(name="deviceCategory")]
-    elif "Monetizzazione" in report_kind:
-        if not retry: dims = [Dimension(name="itemName")]; mets = [Metric(name="itemsPurchased"), Metric(name="itemRevenue")]
+    if report_kind == "Acquisizione Traffico": dims = [Dimension(name="sessionSourceMedium")]
+    elif report_kind == "Campagne": dims = [Dimension(name="campaignName")]; mets = [Metric(name="sessions"), Metric(name="conversions")]
+    elif report_kind == "Panoramica Eventi": dims = [Dimension(name="eventName")]; mets = [Metric(name="eventCount"), Metric(name="totalUsers")]
+    elif report_kind == "Pagine e Schermate": dims = [Dimension(name="pageTitle")]; mets = [Metric(name="screenPageViews"), Metric(name="activeUsers")]
+    elif report_kind == "Landing Page": dims = [Dimension(name="landingPage")]; mets = [Metric(name="sessions"), Metric(name="conversions")]
+    elif report_kind == "Fidelizzazione": dims = [Dimension(name="newVsReturning")]
+    elif report_kind == "Città": dims = [Dimension(name="city")]
+    elif report_kind == "Dispositivi": dims = [Dimension(name="deviceCategory")]
+    elif report_kind == "Monetizzazione":
+        if not retry_mode: dims = [Dimension(name="itemName")]; mets = [Metric(name="itemsPurchased"), Metric(name="itemRevenue")]
         else: dims = [Dimension(name="date")]; mets = [Metric(name="totalRevenue"), Metric(name="conversions")]
 
     try:
@@ -169,7 +173,7 @@ def get_ga4_data(prop_id, start, end, p_start, p_end, report_kind, comp_active, 
                     for i, m in enumerate(mets): prev[metric_map.get(m.name, m.name)] += float(row.metric_values[i].value)
         return "OK", df, (curr, prev)
     except Exception as e:
-        if "Monetizzazione" in report_kind and not retry: return get_ga4_data(prop_id, start, end, p_start, p_end, report_kind, comp_active, True)
+        if report_kind == "Monetizzazione" and not retry_mode: return get_ga4_data(prop_id, start, end, p_start, p_end, report_kind, comp_active, True)
         return "API_ERROR", str(e), None
 
 def render_chart_smart(df, report_kind):
@@ -198,80 +202,44 @@ def generate_report(reports, pid, d1, d2, p1, p2, comp, context):
                     df['Data'] = df['date_obj'].dt.strftime('%d/%m/%y'); df = df.sort_values(by='date_obj')
             comm = ask_gemini_advanced(df, rep, kpi[0], kpi[1], comp, context)
             res[rep] = {"df": df, "curr": kpi[0], "prev": kpi[1], "comm": comm, "error": None}
-        elif status == "AUTH_ERROR": st.error("Errore Autenticazione."); break
-        elif status == "API_ERROR": res[rep] = {"error": f"Dati non disponibili ({df})"}
+        elif status == "INCOMPATIBLE": res[rep] = {"error": "Dati non disponibili."}
+        elif status == "AUTH_ERROR": break # L'errore è già stampato da get_ga4_client
+        elif status == "API_ERROR": res[rep] = {"error": f"Errore Tecnico: {df}"}
         bar.progress((i + 1) / len(reports))
     bar.empty()
     return res
 
-# --- LOGICA AUTO-RUN (LINK) ---
-query_params = st.query_params
-url_id = query_params.get("id", "")
-url_client = query_params.get("client", "")
-url_context = query_params.get("context", "")
+# --- UI ---
+def get_base64_logo():
+    if os.path.exists("logo.png"):
+        with open("logo.png", "rb") as f: data = f.read(); return base64.b64encode(data).decode()
+    return ""
+logo_b64 = get_base64_logo()
 
-# Se ci sono dati nell'URL e non abbiamo ancora generato, AVVIA SUBITO
-if url_id and url_client and st.session_state.first_load:
-    today = datetime.date.today()
-    s_date = today - datetime.timedelta(days=28) # Default auto-run
-    p_end = s_date - datetime.timedelta(days=1)
-    p_start = p_end - datetime.timedelta(days=28)
-    
-    # Default report list per auto-run
-    auto_reports = ["Panoramica Trend", "Acquisizione Traffico", "Monetizzazione (E-commerce)", "Dispositivi", "Città"]
-    
-    st.session_state.report_data = generate_report(
-        auto_reports, 
-        url_id, 
-        s_date.strftime("%Y-%m-%d"), today.strftime("%Y-%m-%d"), 
-        p_start.strftime("%Y-%m-%d"), p_end.strftime("%Y-%m-%d"), 
-        True, url_context
-    )
-    st.session_state.first_load = False # Evita loop infinito
-
-# --- SIDEBAR UI ---
 with st.sidebar:
-    if os.path.exists("logo.png"): st.image("logo.png", width=80)
+    if logo_b64: st.markdown(f'<img src="data:image/png;base64,{logo_b64}" width="100">', unsafe_allow_html=True)
     st.markdown("### Configurazione")
-    
-    # Valori di default presi dall'URL se presenti
-    def_cl = url_client if url_client else ""
-    def_id = url_id if url_id else st.session_state.get('last_prop_id', '')
-    def_ctx = url_context if url_context else ""
-
-    client_name = st.text_input("Cliente", value=def_cl)
-    property_id = st.text_input("ID GA4", value=def_id)
-    business_context = st.text_area("Contesto", value=def_ctx, placeholder="Settore...", height=80)
+    client_name = st.text_input("Cliente", value=default_client if default_client else "", placeholder="Nome Cliente")
+    property_id = st.text_input("ID GA4", value=default_id if default_id else st.session_state.get('last_prop_id', ''))
+    business_context = st.text_area("Contesto", value=default_context if default_context else "", placeholder="Settore...", height=80)
     
     st.markdown("---")
-    date_opt = st.selectbox("Periodo", ("Ultimi 28 Giorni", "Ultimi 90 Giorni", "Ultimo Anno", "Ultimi 2 Anni", "Personalizzato"))
-    
+    date_opt = st.selectbox("Periodo", ("Ultimi 28 Giorni", "Ultimi 90 Giorni", "Ultimo Anno", "Personalizzato"))
     today = datetime.date.today()
     if date_opt == "Ultimi 28 Giorni": start_date = today - datetime.timedelta(days=28)
     elif date_opt == "Ultimi 90 Giorni": start_date = today - datetime.timedelta(days=90)
     elif date_opt == "Ultimo Anno": start_date = today - datetime.timedelta(days=365)
-    elif date_opt == "Ultimi 2 Anni": start_date = today - datetime.timedelta(days=730)
     else: start_date = st.date_input("Dal", today - datetime.timedelta(days=30))
     end_date = st.date_input("Al", today) if date_opt == "Personalizzato" else today
-    
     comp_active = st.checkbox("Confronta periodo precedente", value=True)
+    
     if comp_active:
-        delta = end_date - start_date
-        p_end = start_date - datetime.timedelta(days=1)
-        p_start = p_end - delta
+        delta = end_date - start_date; p_end = start_date - datetime.timedelta(days=1); p_start = p_end - delta
         s_s, s_e = start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d")
         p_s, p_e = p_start.strftime("%Y-%m-%d"), p_end.strftime("%Y-%m-%d")
-        vs_text = f"{p_start.strftime('%d/%m/%y')} - {p_end.strftime('%d/%m/%y')}"
-    else: s_s, s_e = start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d"); p_s, p_e = s_s, s_e; vs_text = ""
+    else: s_s, s_e = start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d"); p_s, p_e = s_s, s_e
 
-    grp = { 
-        "📊 Panoramica": ["Panoramica Trend"], 
-        "📥 Acquisizione": ["Acquisizione Traffico", "Campagne"], 
-        "👍 Coinvolgimento": ["Panoramica Eventi", "Pagine e Schermate", "Landing Page"], 
-        "💰 Monetizzazione": ["Monetizzazione (E-commerce)"], 
-        "❤️ Fidelizzazione": ["Fidelizzazione (New vs Return)"], 
-        "🌍 Utente": ["Dettagli Demografici (Città)", "Paese / Lingua", "Tecnologia (Dispositivi)"] 
-    }
+    grp = { "📊 Panoramica": ["Panoramica Trend"], "📥 Acquisizione": ["Acquisizione Traffico", "Campagne"], "👍 Coinvolgimento": ["Panoramica Eventi", "Pagine e Schermate", "Landing Page"], "💰 Monetizzazione": ["Monetizzazione"], "❤️ Fidelizzazione": ["Fidelizzazione"], "🌍 Utente": ["Città", "Dispositivi"] }
     sel_grp = st.selectbox("Visualizza", ["REPORT COMPLETO"] + list(grp.keys()))
     target = [r for l in grp.values() for r in l] if sel_grp == "REPORT COMPLETO" else grp[sel_grp]
     
@@ -283,7 +251,7 @@ with st.sidebar:
     with st.expander("🔗 Crea Link Condivisibile"):
         if property_id and client_name:
             safe_client = urllib.parse.quote(client_name); safe_ctx = urllib.parse.quote(business_context)
-            final_domain = "https://alexdeflorio75-analytics-dashboard-app-pohqgy.streamlit.app"
+            final_domain = "https://adf-analytics.streamlit.app" # Link sicuro
             st.code(f"{final_domain}/?id={property_id}&client={safe_client}&context={safe_ctx}", language="text")
         else: st.info("Compila i dati.")
 
@@ -297,7 +265,6 @@ if client_name:
                 <h2 style="margin:0; color:#D15627;">ADF Marketing Report</h2>
                 <p style="margin:0;"><b>Cliente:</b> {client_name}</p>
                 <p style="margin:0;"><b>Periodo:</b> {start_date.strftime('%d/%m/%y')} - {end_date.strftime('%d/%m/%y')}</p>
-                <p style="margin:0; font-size:12px; color:#666;">vs {vs_text}</p>
             </div>
         </div>
         <div style="margin-top:10px; padding:10px; background-color:#F0F8FF; border-radius:5px; font-size:13px;">
@@ -312,15 +279,14 @@ with col1:
     st.title(main_title)
     st.caption(f"Analisi: {start_date.strftime('%d/%m/%Y')} - {end_date.strftime('%d/%m/%Y')}")
 with col2:
-    st.write(""); components.html("""<script>function printPage() { window.print(); }</script><button onclick="printPage()" style="background-color:#D15627; color:white; border:none; padding:10px 20px; border-radius:5px; font-weight:bold; cursor:pointer; font-family:sans-serif;">🖨️ Stampa PDF</button>""", height=60)
+    st.write(""); components.html("""<script>function printPage() { window.print(); }</script><button onclick="printPage()" style="background-color:#D15627; color:white; border:none; padding:10px 20px; border-radius:5px; font-weight:bold; cursor:pointer; font-family:sans-serif;">🖨️ Salva PDF</button>""", height=60)
 
 if st.session_state.report_data:
     data = st.session_state.report_data
     for name, content in data.items():
         st.markdown('<div class="report-section">', unsafe_allow_html=True)
         st.markdown(f"### 📌 {name}")
-        if content.get("error"):
-            st.warning(content["error"])
+        if content.get("error"): st.warning(content["error"])
         else:
             cur, pre = content['curr'], content['prev']
             cols = st.columns(len(cur))
