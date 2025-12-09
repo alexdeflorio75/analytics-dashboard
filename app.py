@@ -10,7 +10,7 @@ import streamlit.components.v1 as components
 import altair as alt 
 import json
 import re
-import time  # Aggiunto per gestire i ritardi delle API
+import time
 
 # --- 1. CONFIGURAZIONE PAGINA ---
 st.set_page_config(page_title="ADF Marketing Analyst", layout="wide", page_icon="📊")
@@ -18,134 +18,59 @@ st.set_page_config(page_title="ADF Marketing Analyst", layout="wide", page_icon=
 if 'report_data' not in st.session_state:
     st.session_state.report_data = None
 
-# --- 2. DESIGN SYSTEM (PALETTE FIX & INPUT VISIBILI & PRINT CSS) ---
+# --- 2. DESIGN SYSTEM & CSS STAMPA ---
 st.markdown("""
 <style>
-    /* Import Font */
     @import url('https://fonts.googleapis.com/css2?family=Lato:wght@400;700&family=Poppins:wght@600;700&display=swap');
 
-    /* --- GLOBAL STYLES --- */
-    .stApp {
-        background-color: #F9F9F9; /* Grigio chiarissimo di sfondo */
-    }
-    
-    html, body, p, div, label, .stMarkdown {
-        font-family: 'Lato', sans-serif !important;
-        color: #2D3233 !important; /* Testo scuro */
-    }
-    
-    h1, h2, h3, h4 {
-        font-family: 'Poppins', sans-serif !important;
-        color: #0D0D0D !important; /* Titoli Neri */
-    }
+    .stApp { background-color: #F9F9F9; }
+    html, body, p, div, label, .stMarkdown { font-family: 'Lato', sans-serif !important; color: #2D3233 !important; }
+    h1, h2, h3, h4 { font-family: 'Poppins', sans-serif !important; color: #0D0D0D !important; }
 
-    /* --- INPUT FIELDS (FIX BORDI & CONTRASTO) --- */
-    /* Caselle di testo e Selectbox */
+    /* INPUT FIELDS */
     div[data-baseweb="input"] > div, div[data-baseweb="select"] > div {
-        background-color: #FFFFFF !important;
-        border: 1px solid #066C9C !important; /* Bordo Blu Palette */
-        border-radius: 6px !important;
-        color: #2D3233 !important;
+        background-color: #FFFFFF !important; border: 1px solid #066C9C !important; border-radius: 6px !important; color: #2D3233 !important;
     }
-    
-    /* Testo dentro gli input */
-    input.stTextInput, .stSelectbox div {
-        color: #2D3233 !important;
-        font-weight: 500;
-    }
+    input.stTextInput, .stSelectbox div { color: #2D3233 !important; font-weight: 500; }
+    .stTextInput label, .stSelectbox label, .stTextArea label { color: #066C9C !important; font-weight: bold; }
 
-    /* Label sopra gli input (es. "ID Proprietà") */
-    .stTextInput label, .stSelectbox label, .stTextArea label {
-        color: #066C9C !important; /* Blu Palette */
-        font-weight: bold;
-    }
-
-    /* --- PULSANTI (FIX COLORE) --- */
+    /* PULSANTI */
     div.stButton > button:first-child {
-        background-color: #D15627 !important; /* Arancione Ruggine */
-        color: #FFFFFF !important; /* Testo BIANCO forzato */
-        border: none;
-        border-radius: 8px;
-        padding: 0.6rem 1.2rem;
-        font-family: 'Poppins', sans-serif;
-        font-weight: 600;
-        letter-spacing: 0.5px;
-        transition: all 0.3s ease;
+        background-color: #D15627 !important; color: #FFFFFF !important; border: none; border-radius: 8px; padding: 0.6rem 1.2rem; font-weight: 600;
     }
-    
-    div.stButton > button:first-child:hover {
-        background-color: #B3441F !important; /* Arancione più scuro */
-        color: #FFFFFF !important;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-    }
+    div.stButton > button:first-child:hover { background-color: #B3441F !important; color: #FFFFFF !important; }
 
-    /* --- KPI CARDS --- */
-    [data-testid="stMetricValue"] {
-        color: #066C9C !important; /* Numeri Blu */
-        font-family: 'Poppins', sans-serif;
-    }
-    [data-testid="stMetricLabel"] {
-        color: #54A1BF !important; /* Label azzurrine */
-    }
+    /* KPI & TITOLI */
+    [data-testid="stMetricValue"] { color: #066C9C !important; font-family: 'Poppins', sans-serif; }
+    [data-testid="stMetricLabel"] { color: #54A1BF !important; }
+    div.report-section h3 { color: #D15627 !important; border-bottom: 2px solid #D0E9F2; padding-bottom: 10px; }
+    .stAlert { background-color: #E6F4F9; border-left: 5px solid #066C9C; color: #2D3233; }
 
-    /* --- TITOLI REPORT --- */
-    div.report-section h3 {
-        color: #D15627 !important; /* Titoli sezioni Arancioni per stacco */
-        border-bottom: 2px solid #D0E9F2;
-        padding-bottom: 10px;
-    }
-
-    /* --- INFO BOX AI --- */
-    .stAlert {
-        background-color: #E6F4F9; /* Azzurro chiarissimo */
-        border-left: 5px solid #066C9C;
-        color: #2D3233;
-    }
-
-    /* --- STAMPA PROFESSIONALE (PDF FIX) --- */
+    /* --- STAMPA PROFESSIONALE --- */
     @media print {
-        /* 1. Nascondi elementi inutili di Streamlit */
-        [data-testid="stSidebar"], 
-        .stButton, 
-        button, 
-        header, 
-        footer, 
-        #MainMenu, 
-        .stDeployButton,
-        [data-testid="stToolbar"] {
+        /* Nascondi Sidebar, Header, Footer e Pulsanti Streamlit */
+        [data-testid="stSidebar"], .stButton, button, header, footer, #MainMenu, .stDeployButton, [data-testid="stToolbar"] {
             display: none !important;
         }
-
-        /* 2. Reset Layout per foglio A4 bianco */
-        .stApp, .block-container {
-            background-color: white !important;
-            margin: 0 !important;
-            padding: 0 !important;
-            max-width: 100vw !important;
-        }
-
-        /* 3. Gestione intelligente dei blocchi report */
-        .report-section {
-            page-break-inside: avoid; /* Evita di tagliare a metà i grafici */
-            border: 1px solid #ddd;
-            padding: 20px;
-            margin-bottom: 20px;
-            break-inside: avoid;
-        }
-
-        /* 4. Ottimizzazione Colori per risparmio inchiostro ma alta leggibilità */
-        body {
-            -webkit-print-color-adjust: exact !important;
-            print-color-adjust: exact !important;
-            font-size: 12pt !important;
-            color: black !important;
-        }
         
-        /* 5. Fix Dimensioni Grafici */
-        canvas {
-            max-width: 100% !important;
-            height: auto !important;
+        /* FIX: Nasconde l'iframe che contiene il pulsante di stampa personalizzato */
+        iframe { display: none !important; }
+
+        /* Layout A4 Pulito */
+        .stApp, .block-container {
+            background-color: white !important; margin: 0 !important; padding: 0 !important; max-width: 100vw !important;
         }
+
+        /* Gestione Blocchi Report */
+        .report-section {
+            page-break-inside: avoid; border: 1px solid #ddd; padding: 20px; margin-bottom: 20px; break-inside: avoid;
+        }
+
+        /* Colori e Font */
+        body { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; font-size: 12pt !important; color: black !important; }
+        
+        /* Grafici */
+        canvas { max-width: 100% !important; height: auto !important; }
     }
 </style>
 """, unsafe_allow_html=True)
@@ -161,11 +86,10 @@ def configure_ai():
 
 ai_configured = configure_ai()
 
-# FUNZIONE AI POTENZIATA (Gestione Errori 429 + Retry)
+# FUNZIONE AI (Modello Stabile gemini-pro)
 def ask_gemini_advanced(df, report_name, kpi_curr, kpi_prev, comparison_active, business_context):
     if not ai_configured: return "⚠️ Chiave API AI mancante."
     
-    # Prepara i dati
     data_preview = df.head(15).to_string(index=False)
     context_str = f"Settore: '{business_context}'." if business_context else "Generico."
     
@@ -199,16 +123,16 @@ def ask_gemini_advanced(df, report_name, kpi_curr, kpi_prev, comparison_active, 
     3. 💡 **Azione Consigliata:** Una sola azione pratica e specifica da implementare subito.
     """
     
-    # RETRY LOGIC: Riprova fino a 3 volte se c'è errore 429
+    # RETRY LOGIC
     for attempt in range(3):
         try:
-            # Usa Flash che è più veloce ed economico
-            model = genai.GenerativeModel('gemini-1.5-flash')
+            # FIX: Uso gemini-pro che è il modello standard stabile (evita errore 404)
+            model = genai.GenerativeModel('gemini-pro')
             response = model.generate_content(prompt)
             return response.text
         except Exception as e:
             if "429" in str(e) or "quota" in str(e).lower():
-                time.sleep(2 + (attempt * 2)) # Aspetta 2s, poi 4s, poi 6s
+                time.sleep(2 + (attempt * 2))
                 continue
             return f"⚠️ Analisi non disponibile al momento. (Err: {str(e)})"
             
@@ -233,7 +157,7 @@ def get_ga4_client():
         return None
     except: return None
 
-# --- 5. DATA ENGINE (Con Cache e Retry Parameter) ---
+# --- 5. DATA ENGINE ---
 @st.cache_data(ttl=3600, show_spinner=False)
 def get_ga4_data(prop_id, start, end, p_start, p_end, report_kind, comp_active, retry=False):
     client = get_ga4_client()
@@ -289,8 +213,6 @@ def render_chart_smart(df, report_kind):
     cols = [c for c in df.columns if c not in ['Dimensione', 'Data', 'date_obj']]
     if not cols: return
     main = cols[0]
-    
-    # Palette colori personalizzata (Blu Key, Arancio Key, etc)
     color_scale = alt.Scale(range=["#066C9C", "#D15627", "#54A1BF", "#2D3233"])
     
     if "Dispositivi" in report_kind or "Fidelizzazione" in report_kind:
@@ -317,9 +239,7 @@ def generate_report(reports, pid, d1, d2, p1, p2, comp, context):
     res = {}
     bar = st.progress(0)
     for i, rep in enumerate(reports):
-        # RALLENTAMENTO INTENZIONALE PER EVITARE BLOCCO API GEMINI
-        time.sleep(1.5) 
-        
+        time.sleep(1.0) 
         status, df, kpi = get_ga4_data(pid, d1, d2, p1, p2, rep, comp)
         if status == "OK" and not df.empty:
             if rep == "Panoramica Trend":
@@ -359,8 +279,12 @@ with st.sidebar:
         delta = end_date - start_date
         p_end = start_date - datetime.timedelta(days=1)
         p_start = p_end - delta
-        st.caption(f"Vs: {p_start.strftime('%d/%m/%y')} - {p_end.strftime('%d/%m/%y')}")
-    else: p_start, p_end = start_date, end_date # Dummy
+        p_start_str = p_start.strftime('%d/%m/%y')
+        p_end_str = p_end.strftime('%d/%m/%y')
+        st.caption(f"Vs: {p_start_str} - {p_end_str}")
+    else: 
+        p_start, p_end = start_date, end_date 
+        p_start_str, p_end_str = "-", "-"
 
     st.divider()
     grp = {
@@ -382,22 +306,24 @@ col1, col2 = st.columns([3, 1])
 with col1:
     main_title = f"Report: {client_name}" if client_name else "Report Analitico GA4"
     st.title(main_title)
-    st.caption(f"Analisi: {start_date.strftime('%d/%m/%Y')} - {end_date.strftime('%d/%m/%Y')}")
+    
+    # --- INTEGRAZIONE: INTESTAZIONE STAMPA COMPLETA ---
+    comp_status = f"✅ Sì (vs {p_start_str} - {p_end_str})" if comp_active else "❌ No"
+    header_html = f"""
+    <div style="background-color: #F0F2F6; padding: 15px; border-radius: 10px; margin-bottom: 25px; border-left: 5px solid #D15627;">
+        <p style="margin:0; font-size: 14px; color:#2D3233;"><b>📅 Periodo:</b> {start_date.strftime('%d/%m/%Y')} - {end_date.strftime('%d/%m/%Y')}</p>
+        <p style="margin:0; font-size: 14px; color:#2D3233;"><b>🏪 Contesto:</b> {business_context if business_context else 'Non specificato'}</p>
+        <p style="margin:0; font-size: 14px; color:#2D3233;"><b>🔄 Confronto:</b> {comp_status}</p>
+    </div>
+    """
+    st.markdown(header_html, unsafe_allow_html=True)
+
 with col2:
     st.write("")
-    # FIX STAMPA: Usa window.parent.print() per uscire dall'iframe di Streamlit
     print_btn = """
     <div style="display: flex; justify-content: flex-end;">
         <button onclick="window.parent.print()" style="
-            background-color: #D15627; 
-            color: white; 
-            border: none; 
-            padding: 10px 20px; 
-            border-radius: 5px; 
-            font-weight: bold; 
-            cursor: pointer; 
-            font-family: sans-serif;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.2);">
+            background-color: #D15627; color: white; border: none; padding: 10px 20px; border-radius: 5px; font-weight: bold; cursor: pointer; font-family: sans-serif; box-shadow: 0 2px 5px rgba(0,0,0,0.2);">
             🖨️ Stampa PDF
         </button>
     </div>
