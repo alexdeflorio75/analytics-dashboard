@@ -47,24 +47,27 @@ st.markdown("""
 
     /* --- REGOLE DI STAMPA PERFETTA (PDF) --- */
     @media print {
-        /* 1. Nascondi Sidebar (dove ora c'è il tasto stampa), Header, Footer e UI Streamlit */
+        /* Nascondi Sidebar, Header, Footer e UI Streamlit */
         [data-testid="stSidebar"], .stButton, button, header, footer, #MainMenu, .stDeployButton, [data-testid="stToolbar"] {
             display: none !important;
         }
         
-        /* 2. Resetta layout per A4 */
+        /* Resetta layout per A4 */
         .stApp, .block-container {
             background-color: white !important; margin: 0 !important; padding: 0 !important; max-width: 100vw !important;
         }
 
-        /* 3. Forza apertura expander (Dettagli) */
+        /* Forza apertura expander (Dettagli) */
         .streamlit-expanderContent { display: block !important; visibility: visible !important; height: auto !important; opacity: 1 !important; }
         .streamlit-expanderHeader { color: #066C9C !important; font-weight: bold !important; border-bottom: 1px solid #ccc; } 
 
-        /* 4. Gestione interruzioni pagina */
+        /* Gestione interruzioni pagina */
         .report-section {
             page-break-inside: avoid; border: 1px solid #ddd; padding: 20px; margin-bottom: 20px; break-inside: avoid;
         }
+        
+        /* FIX DEFINITIVO BOX GRIGI: Nascondi iframe pulsante se rimasti */
+        iframe { display: none !important; }
 
         body { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; font-size: 12pt !important; color: black !important; }
         canvas { max-width: 100% !important; height: auto !important; }
@@ -72,7 +75,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- 3. AI CONFIG & INTELLIGENT MODEL SELECTOR ---
+# --- 3. AI CONFIG ---
 def configure_ai():
     try:
         if "GOOGLE_API_KEY" in st.secrets:
@@ -82,29 +85,6 @@ def configure_ai():
     except: return False
 
 ai_configured = configure_ai()
-
-# FUNZIONE INTELLIGENTE: Prova diversi modelli finché uno non funziona
-def get_working_response(prompt):
-    # Lista di priorità: Flash (veloce) -> Pro (potente) -> Legacy
-    # Usiamo i nomi completi 'models/...' per evitare errori 404
-    candidates = [
-        'models/gemini-1.5-flash',
-        'models/gemini-1.5-pro',
-        'models/gemini-pro'
-    ]
-    
-    errors = []
-    for model_name in candidates:
-        try:
-            model = genai.GenerativeModel(model_name)
-            response = model.generate_content(prompt)
-            return response.text # Se funziona, ritorna subito
-        except Exception as e:
-            errors.append(f"{model_name}: {str(e)}")
-            continue # Se fallisce, prova il prossimo
-            
-    # Se arriviamo qui, tutti hanno fallito
-    return f"⚠️ Tutti i modelli AI hanno fallito. Dettagli errori: {'; '.join(errors)}"
 
 def ask_gemini_advanced(df, report_name, kpi_curr, kpi_prev, comparison_active, business_context):
     if not ai_configured: return "⚠️ Chiave API AI mancante."
@@ -142,7 +122,13 @@ def ask_gemini_advanced(df, report_name, kpi_curr, kpi_prev, comparison_active, 
     3. 💡 **Azione Consigliata:** Una sola azione pratica e specifica da implementare subito.
     """
     
-    return get_working_response(prompt)
+    try:
+        # Usa ESPLICITAMENTE il nome modello che abbiamo visto funzionare nei log
+        model = genai.GenerativeModel('models/gemini-1.5-flash')
+        response = model.generate_content(prompt)
+        return response.text
+    except Exception as e:
+        return f"⚠️ Errore AI ({genai.__version__}): {str(e)}"
 
 # --- 4. AUTH ---
 def get_ga4_client():
@@ -308,7 +294,6 @@ with st.sidebar:
         else: st.session_state.report_data = generate_report(target, property_id, start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d"), p_start.strftime("%Y-%m-%d"), p_end.strftime("%Y-%m-%d"), comp_active, business_context)
 
     # --- NUOVO POSIZIONAMENTO TASTO STAMPA (SIDEBAR) ---
-    # Questo elimina il problema dei "box grigi" nella colonna di destra in stampa
     st.write("")
     st.divider()
     print_btn = """
@@ -320,6 +305,9 @@ with st.sidebar:
     </div>
     """
     components.html(print_btn, height=60)
+    
+    # DEBUG VERSION (Per capire se ha aggiornato)
+    st.caption(f"v.AI: {genai.__version__}")
 
 
 # --- LAYOUT PRINCIPALE (SENZA COLONNE PER HEADER PULITO) ---
