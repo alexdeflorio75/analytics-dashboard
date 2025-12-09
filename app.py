@@ -46,15 +46,19 @@ st.markdown("""
     div.report-section h3 { color: #D15627 !important; border-bottom: 2px solid #D0E9F2; padding-bottom: 10px; }
     .stAlert { background-color: #E6F4F9; border-left: 5px solid #066C9C; color: #2D3233; }
 
-    /* --- STAMPA PROFESSIONALE --- */
+    /* --- STAMPA PROFESSIONALE (FIX COMPLETO) --- */
     @media print {
-        /* Nascondi Sidebar, Header, Footer e Pulsanti Streamlit */
+        /* Nascondi Sidebar, Header, Footer e Pulsanti */
         [data-testid="stSidebar"], .stButton, button, header, footer, #MainMenu, .stDeployButton, [data-testid="stToolbar"] {
             display: none !important;
         }
         
-        /* FIX: Nasconde l'iframe che contiene il pulsante di stampa personalizzato */
-        iframe { display: none !important; }
+        /* FIX: Nasconde l'iframe del pulsante */
+        iframe { display: none !important; height: 0 !important; }
+
+        /* FIX: Resetta le colonne per evitare il "buco" a destra */
+        [data-testid="stHorizontalBlock"] { display: block !important; }
+        [data-testid="column"] { width: 100% !important; display: block !important; margin-bottom: 10px !important; }
 
         /* Layout A4 Pulito */
         .stApp, .block-container {
@@ -66,10 +70,7 @@ st.markdown("""
             page-break-inside: avoid; border: 1px solid #ddd; padding: 20px; margin-bottom: 20px; break-inside: avoid;
         }
 
-        /* Colori e Font */
         body { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; font-size: 12pt !important; color: black !important; }
-        
-        /* Grafici */
         canvas { max-width: 100% !important; height: auto !important; }
     }
 </style>
@@ -86,7 +87,7 @@ def configure_ai():
 
 ai_configured = configure_ai()
 
-# FUNZIONE AI (Modello Stabile gemini-pro)
+# FUNZIONE AI (Modello Flash + Retry)
 def ask_gemini_advanced(df, report_name, kpi_curr, kpi_prev, comparison_active, business_context):
     if not ai_configured: return "⚠️ Chiave API AI mancante."
     
@@ -126,13 +127,14 @@ def ask_gemini_advanced(df, report_name, kpi_curr, kpi_prev, comparison_active, 
     # RETRY LOGIC
     for attempt in range(3):
         try:
-            # FIX: Uso gemini-pro che è il modello standard stabile (evita errore 404)
-            model = genai.GenerativeModel('gemini-pro')
+            # USA GEMINI 1.5 FLASH: Più veloce ed economico
+            model = genai.GenerativeModel('gemini-1.5-flash')
             response = model.generate_content(prompt)
             return response.text
         except Exception as e:
+            # Se errore di quota (429), aspetta
             if "429" in str(e) or "quota" in str(e).lower():
-                time.sleep(2 + (attempt * 2))
+                time.sleep(3 + (attempt * 2))
                 continue
             return f"⚠️ Analisi non disponibile al momento. (Err: {str(e)})"
             
@@ -239,7 +241,9 @@ def generate_report(reports, pid, d1, d2, p1, p2, comp, context):
     res = {}
     bar = st.progress(0)
     for i, rep in enumerate(reports):
-        time.sleep(1.0) 
+        # DELAY per evitare limiti API (Se paghi Google Cloud, puoi rimuoverlo)
+        time.sleep(2.0) 
+        
         status, df, kpi = get_ga4_data(pid, d1, d2, p1, p2, rep, comp)
         if status == "OK" and not df.empty:
             if rep == "Panoramica Trend":
@@ -307,7 +311,7 @@ with col1:
     main_title = f"Report: {client_name}" if client_name else "Report Analitico GA4"
     st.title(main_title)
     
-    # --- INTEGRAZIONE: INTESTAZIONE STAMPA COMPLETA ---
+    # Intestazione Report (Dati Cliente)
     comp_status = f"✅ Sì (vs {p_start_str} - {p_end_str})" if comp_active else "❌ No"
     header_html = f"""
     <div style="background-color: #F0F2F6; padding: 15px; border-radius: 10px; margin-bottom: 25px; border-left: 5px solid #D15627;">
@@ -320,6 +324,7 @@ with col1:
 
 with col2:
     st.write("")
+    # Pulsante Stampa (Nascosto in PDF)
     print_btn = """
     <div style="display: flex; justify-content: flex-end;">
         <button onclick="window.parent.print()" style="
