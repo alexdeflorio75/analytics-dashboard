@@ -9,12 +9,11 @@ import datetime
 import streamlit.components.v1 as components
 import altair as alt 
 import json
-import re
-import urllib.parse
 import base64
-import time # Necessario per rallentare l'AI ed evitare errori
+import time
+import urllib.parse
 
-# --- 1. CONFIGURAZIONE PAGINA ---
+# --- 1. CONFIGURAZIONE ---
 st.set_page_config(page_title="ADF Marketing Analyst", layout="wide", page_icon="📊")
 
 query_params = st.query_params
@@ -24,7 +23,6 @@ default_context = query_params.get("context", "")
 
 if 'report_data' not in st.session_state: st.session_state.report_data = None
 
-# Funzione Logo
 def get_base64_logo():
     if os.path.exists("logo.png"):
         with open("logo.png", "rb") as f: data = f.read()
@@ -32,145 +30,74 @@ def get_base64_logo():
     return ""
 logo_b64 = get_base64_logo()
 
-# --- 2. CSS STAMPA & DESIGN (FIX DEFINITIVO) ---
+# --- 2. CSS PULITO (STAMPA & DESIGN) ---
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Lato:wght@400;700&family=Poppins:wght@600;700&display=swap');
-    
     .stApp { background-color: #F9F9F9; }
-    html, body, p, div, label, .stMarkdown, .stRadio label { font-family: 'Lato', sans-serif !important; color: #2D3233 !important; }
+    html, body, p, div, label, .stMarkdown { font-family: 'Lato', sans-serif !important; color: #2D3233 !important; }
     h1, h2, h3, h4 { font-family: 'Poppins', sans-serif !important; color: #0D0D0D !important; }
     
     .stTextInput input, .stTextArea textarea, .stSelectbox div[data-baseweb="select"] > div {
-        background-color: #FFFFFF !important; border: 1px solid #066C9C !important; border-radius: 6px; font-size: 15px;
+        background-color: #FFFFFF !important; border: 1px solid #066C9C !important; border-radius: 6px;
     }
-    
-    [data-testid="stSidebar"] .block-container { padding: 2rem 1.5rem; }
     
     /* Pulsante Rosso */
     div.stButton > button:first-child {
-        background-color: #D15627 !important; color: white !important; border: none; font-weight: bold; padding: 0.8rem; width: 100%; margin-top: 10px;
+        background-color: #D15627 !important; color: white !important; border: none; font-weight: bold; width: 100%; margin-top: 15px;
     }
     div.stButton > button:first-child:hover { background-color: #A33B1B !important; }
 
-    /* Report Layout */
-    div.report-section h3 { color: #D15627 !important; border-bottom: 3px solid #D0E9F2; padding-bottom: 8px; margin-top: 30px; }
-    [data-testid="stMetricValue"] { color: #066C9C !important; font-weight: 700; }
-
-    /* --- STILE DI STAMPA "CHIURURGICO" --- */
+    /* Stampa */
     @media print {
-        /* 1. Nascondi Barre e Pulsanti */
-        [data-testid="stSidebar"], 
-        header[data-testid="stHeader"], 
-        .stDeployButton, 
-        footer, 
-        button, 
-        .stButton {
-            display: none !important;
-        }
-
-        /* 2. Resetta Margini per foglio A4 */
-        .block-container {
-            max-width: 100% !important;
-            padding: 2rem !important;
-            margin: 0 !important;
-        }
-        
-        .stApp {
-            background: white !important;
-        }
-
-        /* 3. Mostra Intestazione Stampa */
-        #print-header {
-            display: block !important;
-            margin-bottom: 30px;
-            border-bottom: 2px solid #D15627;
-            padding-bottom: 15px;
-        }
-
-        /* 4. Gestione interruzioni pagina */
-        .report-section { 
-            page-break-inside: avoid;
-            margin-bottom: 40px;
-        }
-        
-        /* 5. Forza visualizzazione Grafici */
-        canvas, .stVegaLiteChart {
-            visibility: visible !important;
-            max-width: 100% !important;
-        }
+        [data-testid="stSidebar"], header, footer, .stButton, .stDeployButton { display: none !important; }
+        .block-container { padding: 0 !important; margin: 0 !important; max-width: 100% !important; background: white !important; }
+        .report-section { page-break-inside: avoid; margin-bottom: 40px; }
+        #print-header { display: block !important; margin-bottom: 30px; border-bottom: 2px solid #D15627; }
     }
-    
     #print-header { display: none; }
 </style>
 """, unsafe_allow_html=True)
 
-# --- 3. AI (Con Ritardo per evitare errori) ---
-def configure_ai():
-    try:
-        if "GOOGLE_API_KEY" in st.secrets:
-            genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
-            return True
-        return False
-    except: return False
-
-ai_configured = configure_ai()
-
-def ask_gemini_advanced(df, report_name, kpi_curr, kpi_prev, comparison_active, business_context):
-    if not ai_configured: return "⚠️ Chiave API AI mancante."
-    
-    # RALLENTA per evitare errore 429 (Too Many Requests)
-    time.sleep(2.5) 
-    
-    data_preview = df.head(10).to_string(index=False)
-    ctx = f"Settore: {business_context}" if business_context else ""
-    
-    if comparison_active:
-        kpi_text = ""
-        for k, v in kpi_curr.items():
-            prev = kpi_prev.get(k, 0)
-            diff = v - prev
-            perc = ((diff/prev)*100) if prev > 0 else 0
-            kpi_text += f"- {k}: {v} (Var: {perc:.1f}%)\n"
-        task = "Trend e cause."
-    else:
-        kpi_text = ""
-        for k, v in kpi_curr.items(): kpi_text += f"- {k}: {v}\n"
-        task = "Volumi attuali."
-
-    prompt = f"""Analista Marketing. {ctx}. Report: {report_name}. KPI: {kpi_text}. DATI: {data_preview}. 1. {task} 2. Voto (1-10). 3. Consiglio. Sintetico. No saluti."""
-    
-    try:
-        model = genai.GenerativeModel('gemini-3-pro-preview')
-        return model.generate_content(prompt).text
-    except:
-        try:
-            # Fallback su modello Lite
-            model = genai.GenerativeModel('gemini-2.5-flash-lite-preview-09-2025')
-            return model.generate_content(prompt).text
-        except Exception as e: return f"⚠️ AI Error (Quota/Conn): {str(e)[:50]}..."
-
-# --- 4. AUTH & DATA ---
+# --- 3. AUTH (METODO CLASSICO v12) ---
 def get_ga4_client():
     try:
+        # Metodo Semplice: Leggi e Converti. Niente pulizie strane.
         if "GOOGLE_CREDENTIALS" in st.secrets:
-            creds_str = st.secrets["GOOGLE_CREDENTIALS"]
-            clean_str = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', creds_str)
-            clean_str = clean_str.replace('PRIVATE KEY-----', 'PRIVATE KEY-----\\n')
-            if not clean_str.startswith('{'): clean_str = creds_str.replace('\n', ' ')
-            creds_dict = json.loads(clean_str, strict=False)
+            creds_dict = json.loads(st.secrets["GOOGLE_CREDENTIALS"])
             return BetaAnalyticsDataClient(credentials=service_account.Credentials.from_service_account_info(creds_dict))
+        
         elif os.path.exists('credentials.json'):
             os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = 'credentials.json'
             return BetaAnalyticsDataClient()
+            
         return None
-    except: return None
+    except Exception as e:
+        st.error(f"Errore Autenticazione (Controlla il formato JSON nei Secrets): {e}")
+        return None
 
+# --- 4. AI ---
+def ask_gemini_advanced(df, report_name, kpi_curr, kpi_prev, comp, context):
+    if "GOOGLE_API_KEY" not in st.secrets: return "⚠️ Chiave AI mancante."
+    try:
+        genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
+        time.sleep(1) # Piccola pausa per evitare errori
+        
+        data_preview = df.head(10).to_string(index=False)
+        ctx = f"Settore: {context}" if context else ""
+        prompt = f"Analista Marketing. {ctx}. Report: {report_name}. Dati: {data_preview}. Analisi trend e consiglio. Sintetico."
+        
+        model = genai.GenerativeModel('gemini-3-pro-preview')
+        return model.generate_content(prompt).text
+    except:
+        return "⚠️ Analisi AI momentaneamente non disponibile."
+
+# --- 5. DATI ---
 def get_ga4_data(prop_id, start, end, p_start, p_end, report_kind, comp_active, retry=False):
     client = get_ga4_client()
     if not client: return "AUTH_ERROR", None, None
 
-    metric_map = {"activeUsers": "Utenti", "sessions": "Sessioni", "screenPageViews": "Visualizzazioni", "conversions": "Conversioni", "eventCount": "Eventi", "totalRevenue": "Entrate (€)", "itemRevenue": "Entrate Prodotto (€)", "itemsPurchased": "Prodotti Venduti"}
+    metric_map = {"activeUsers": "Utenti", "sessions": "Sessioni", "screenPageViews": "Visualizzazioni", "conversions": "Conversioni", "eventCount": "Eventi", "totalRevenue": "Entrate (€)", "itemRevenue": "Entrate Prodotto", "itemsPurchased": "Vendite"}
     dims = [Dimension(name="date")]
     mets = [Metric(name="activeUsers"), Metric(name="sessions"), Metric(name="conversions")]
 
@@ -220,7 +147,8 @@ def render_chart_smart(df, report_kind):
     if "Dispositivi" in report_kind or "Fidelizzazione" in report_kind:
         c = alt.Chart(df).mark_arc(innerRadius=60).encode(theta=alt.Theta(field=main, type="quantitative"), color=alt.Color(field="Dimensione", scale=color_scale), tooltip=["Dimensione", main])
         st.altair_chart(c, use_container_width=True)
-    elif "Panoramica" in report_kind and "Eventi" not in report_kind and "Monetizzazione" not in report_kind: st.line_chart(df, x='Data', y=cols)
+    elif "Panoramica" in report_kind and "Eventi" not in report_kind and "Monetizzazione" not in report_kind:
+        st.line_chart(df, x='Data', y=cols)
     else:
         df_s = df.sort_values(by=main, ascending=False).head(15)
         c = alt.Chart(df_s).mark_bar().encode(x=alt.X(main, title=main), y=alt.Y('Dimensione', sort='-x', title=None), color=alt.value("#066C9C"), tooltip=['Dimensione', main]).properties(height=350)
@@ -238,9 +166,8 @@ def generate_report(reports, pid, d1, d2, p1, p2, comp, context):
                     df['Data'] = df['date_obj'].dt.strftime('%d/%m/%y'); df = df.sort_values(by='date_obj')
             comm = ask_gemini_advanced(df, rep, kpi[0], kpi[1], comp, context)
             res[rep] = {"df": df, "curr": kpi[0], "prev": kpi[1], "comm": comm, "error": None}
-        elif status == "INCOMPATIBLE": res[rep] = {"error": "Dati non disponibili."}
         elif status == "AUTH_ERROR": st.error("Errore Autenticazione."); break
-        elif status == "API_ERROR": res[rep] = {"error": f"Errore Tecnico: {df}"}
+        elif status == "API_ERROR": res[rep] = {"error": f"Dati non disponibili ({df})"}
         bar.progress((i + 1) / len(reports))
     bar.empty()
     return res
@@ -249,21 +176,31 @@ def generate_report(reports, pid, d1, d2, p1, p2, comp, context):
 with st.sidebar:
     if os.path.exists("logo.png"): st.image("logo.png", width=80)
     st.markdown("### Configurazione")
-    client_name = st.text_input("Cliente", value=default_client, placeholder="Nome Cliente")
-    property_id = st.text_input("ID GA4", value=default_id if default_id else st.session_state.get('last_prop_id', ''))
-    business_context = st.text_area("Contesto", value=default_context, placeholder="Settore...", height=80)
+    
+    val_c = default_client if default_client else ""
+    val_i = default_id if default_id else st.session_state.get('last_prop_id', '')
+    val_x = default_context if default_context else ""
+
+    client_name = st.text_input("Cliente", value=val_c)
+    property_id = st.text_input("ID GA4", value=val_i)
+    business_context = st.text_area("Contesto", value=val_x, placeholder="Settore...", height=80)
+    
     st.markdown("---")
-    date_opt = st.selectbox("Periodo", ("Ultimi 28 Giorni", "Ultimi 90 Giorni", "Ultimo Anno", "Personalizzato"))
+    date_opt = st.selectbox("Periodo", ("Ultimi 28 Giorni", "Ultimi 90 Giorni", "Ultimo Anno", "Ultimi 2 Anni", "Personalizzato"))
     today = datetime.date.today()
     if date_opt == "Ultimi 28 Giorni": start_date = today - datetime.timedelta(days=28)
     elif date_opt == "Ultimi 90 Giorni": start_date = today - datetime.timedelta(days=90)
     elif date_opt == "Ultimo Anno": start_date = today - datetime.timedelta(days=365)
+    elif date_opt == "Ultimi 2 Anni": start_date = today - datetime.timedelta(days=730)
     else: start_date = st.date_input("Dal", today - datetime.timedelta(days=30))
     end_date = st.date_input("Al", today) if date_opt == "Personalizzato" else today
+    
     comp_active = st.checkbox("Confronta periodo precedente", value=True)
     if comp_active:
         delta = end_date - start_date; p_end = start_date - datetime.timedelta(days=1); p_start = p_end - delta
-        s_s, s_e = start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d"); p_s, p_e = p_start.strftime("%Y-%m-%d"), p_end.strftime("%Y-%m-%d"); vs_text = f"{p_start.strftime('%d/%m/%y')} - {p_end.strftime('%d/%m/%y')}"
+        s_s, s_e = start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d")
+        p_s, p_e = p_start.strftime("%Y-%m-%d"), p_end.strftime("%Y-%m-%d")
+        vs_text = f"{p_start.strftime('%d/%m/%y')} - {p_end.strftime('%d/%m/%y')}"
     else: s_s, s_e = start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d"); p_s, p_e = s_s, s_e; vs_text = ""
 
     grp = { "📊 Panoramica": ["Panoramica Trend"], "📥 Acquisizione": ["Acquisizione Traffico", "Campagne"], "👍 Coinvolgimento": ["Panoramica Eventi", "Pagine e Schermate", "Landing Page"], "💰 Monetizzazione": ["Monetizzazione"], "❤️ Fidelizzazione": ["Fidelizzazione"], "🌍 Utente": ["Città", "Dispositivi"] }
@@ -275,12 +212,12 @@ with st.sidebar:
         if not property_id: st.error("Manca ID")
         else: st.session_state.report_data = generate_report(target, property_id, s_s, s_e, p_s, p_e, comp_active, business_context)
 
-    with st.expander("🔗 Crea Link Condivisibile"):
+    with st.expander("🔗 Crea Link"):
         if property_id and client_name:
             safe_client = urllib.parse.quote(client_name); safe_ctx = urllib.parse.quote(business_context)
-            final_domain = "https://adf-analytics.streamlit.app"
+            final_domain = "https://analytics.alessandrodeflorio.it"
+            if "streamlit.app" in str(st.query_params): final_domain = "https://adf-analytics.streamlit.app"
             st.code(f"{final_domain}/?id={property_id}&client={safe_client}&context={safe_ctx}", language="text")
-        else: st.info("Compila i dati.")
 
 # --- MAIN ---
 if client_name:
@@ -292,11 +229,10 @@ if client_name:
                 <h2 style="margin:0; color:#D15627;">ADF Marketing Report</h2>
                 <p style="margin:0;"><b>Cliente:</b> {client_name}</p>
                 <p style="margin:0;"><b>Periodo:</b> {start_date.strftime('%d/%m/%y')} - {end_date.strftime('%d/%m/%y')}</p>
-                <p style="margin:0; font-size:12px; color:#666;">vs {vs_text}</p>
             </div>
         </div>
         <div style="margin-top:10px; padding:10px; background-color:#F0F8FF; border-radius:5px; font-size:13px;">
-            <b>Contesto Analisi:</b> {business_context}
+            <b>Contesto:</b> {business_context}
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -307,7 +243,13 @@ with col1:
     st.title(main_title)
     st.caption(f"Analisi: {start_date.strftime('%d/%m/%Y')} - {end_date.strftime('%d/%m/%Y')}")
 with col2:
-    st.write(""); components.html("""<script>function printPage() { window.print(); }</script><button onclick="printPage()" style="background-color:#D15627; color:white; border:none; padding:10px 20px; border-radius:5px; font-weight:bold; cursor:pointer; font-family:sans-serif;">🖨️ Salva PDF</button>""", height=60)
+    st.write(""); components.html("""<script>function printPage() { window.print(); }</script><button onclick="printPage()" style="background-color:#D15627; color:white; border:none; padding:10px 20px; border-radius:5px; font-weight:bold; cursor:pointer; font-family:sans-serif;">🖨️ Stampa PDF</button>""", height=60)
+
+# --- AUTO RUN (LINK) ---
+if default_id and st.session_state.report_data is None:
+    # Auto-avvio sicuro
+    st.session_state.report_data = generate_report(target, default_id, s_s, s_e, p_s, p_e, comp_active, default_context)
+    st.rerun()
 
 if st.session_state.report_data:
     data = st.session_state.report_data
